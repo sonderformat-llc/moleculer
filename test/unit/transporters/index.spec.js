@@ -122,13 +122,11 @@ describe("Test Transporter resolver", () => {
 			let trans = Transporters.resolve("kafka://localhost:9093");
 			expect(trans).toBeInstanceOf(Transporters.Kafka);
 			expect(trans.opts).toEqual({
-				client: {
-					brokers: ["localhost:9093"],
-					logCreator: expect.any(Function),
-					logLevel: 1
-				},
+				clientId: "moleculer-kafka",
+				bootstrapBrokers: ["localhost:9093"],
 				producer: {},
 				consumer: {},
+				admin: {},
 				publish: {},
 				publishMessage: {
 					partition: 0
@@ -138,7 +136,7 @@ describe("Test Transporter resolver", () => {
 
 		it("should resolve KafkaTransporter from obj", () => {
 			let options = {
-				client: { brokers: ["localhost:9093"] },
+				bootstrapBrokers: ["localhost:9093"],
 				publishMessage: {
 					partition: 2
 				}
@@ -146,13 +144,11 @@ describe("Test Transporter resolver", () => {
 			let trans = Transporters.resolve({ type: "Kafka", options });
 			expect(trans).toBeInstanceOf(Transporters.Kafka);
 			expect(trans.opts).toEqual({
-				client: {
-					brokers: ["localhost:9093"],
-					logCreator: expect.any(Function),
-					logLevel: 1
-				},
+				clientId: "moleculer-kafka",
+				bootstrapBrokers: ["localhost:9093"],
 				producer: {},
 				consumer: {},
+				admin: {},
 				publish: {},
 				publishMessage: {
 					partition: 2
