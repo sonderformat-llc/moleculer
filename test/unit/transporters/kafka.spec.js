@@ -229,6 +229,29 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 		expect(transporter.incomingMessage).toHaveBeenCalledWith("INFO", '{ ver: "3" }');
 	});
 
+	it("check makeSubscriptions - should handle topic already exists error", async () => {
+		transporter.broker.broadcastLocal = jest.fn();
+
+		const topicExistsErr = new Error(
+			"Received response with error while executing API CreateTopics(v7)"
+		);
+		topicExistsErr.code = "PLT_KFK_RESPONSE";
+		topicExistsErr.message =
+			"Received response with error while executing API CreateTopics(v7): Topic with this name already exists";
+		transporter.admin.createTopics = jest.fn(() => Promise.reject(topicExistsErr));
+
+		// Should not throw error when topics already exist
+		await transporter.makeSubscriptions([
+			{ cmd: "REQ", nodeID: "node" },
+			{ cmd: "RES", nodeID: "node" }
+		]);
+
+		expect(transporter.broker.broadcastLocal).toHaveBeenCalledTimes(0);
+		expect(transporter.consumer).toBeDefined();
+
+		transporter.admin.createTopics = jest.fn(() => Promise.resolve([]));
+	});
+
 	it("check makeSubscriptions - should broadcast an error", async () => {
 		transporter.broker.broadcastLocal = jest.fn();
 

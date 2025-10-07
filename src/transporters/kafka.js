@@ -163,14 +163,26 @@ class KafkaTransporter extends Transporter {
 				topics: topicNames
 			});
 		} catch (err) {
-			this.logger.error("Unable to create topics!", topicNames, err);
+			// Check if error is because topics already exist (which is not a fatal error)
+			const isTopicExistsError =
+				err.code === "PLT_KFK_RESPONSE" &&
+				err.message &&
+				err.message.includes("Topic with this name already exists");
 
-			this.broker.broadcastLocal("$transporter.error", {
-				error: err,
-				module: "transporter",
-				type: C.FAILED_TOPIC_CREATION
-			});
-			throw err;
+			if (isTopicExistsError) {
+				// Topics already exist, just log a debug message and continue
+				this.logger.debug("Some topics already exist, continuing...", topicNames);
+			} else {
+				// This is a real error, handle it
+				this.logger.error("Unable to create topics!", topicNames, err);
+
+				this.broker.broadcastLocal("$transporter.error", {
+					error: err,
+					module: "transporter",
+					type: C.FAILED_TOPIC_CREATION
+				});
+				throw err;
+			}
 		}
 
 		// Create Consumer
