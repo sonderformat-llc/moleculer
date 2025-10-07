@@ -81,6 +81,7 @@
     "@opentelemetry/instrumentation": "^0.205.0",
     "@opentelemetry/sdk-node": "^0.205.0",
     "@opentelemetry/semantic-conventions": "^1.37.0",
+    "@platformatic/kafka": "^1.17.0",
     "@sinonjs/fake-timers": "^15.0.0",
     "@types/bunyan": "^1.8.11",
     "@types/node": "^24.6.0",
@@ -108,7 +109,6 @@
     "jest-cli": "^29.7.0",
     "jest-diff": "^29.7.0",
     "joi": "^18.0.1",
-    "kafkajs": "^2.2.4",
     "lockfile-lint": "^4.14.1",
     "log4js": "^6.9.1",
     "moleculer-repl": "^0.7.4",
@@ -143,6 +143,7 @@
     "recursive-watch": "^1.1.4"
   },
   "peerDependencies": {
+    "@platformatic/kafka": "^1.17.0",
     "amqplib": "^0.10.0",
     "bunyan": "^1.0.0",
     "cbor-x": "^1.2.0",
@@ -151,7 +152,6 @@
     "etcd3": "^1.0.0",
     "ioredis": "^5.0.0",
     "jaeger-client": "^3.0.0",
-    "kafkajs": "^2.2.4",
     "log4js": "^6.0.0",
     "mqtt": "^5.0.0",
     "msgpack5": "^6.0.0",
@@ -187,7 +187,7 @@
     "jaeger-client": {
       "optional": true
     },
-    "kafkajs": {
+    "@platformatic/kafka": {
       "optional": true
     },
     "log4js": {
