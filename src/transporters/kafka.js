@@ -160,7 +160,7 @@ class KafkaTransporter extends Transporter {
 		const topicNames = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
 		try {
 			await this.admin.createTopics({
-				topics: topicNames.map(topic => ({ topic }))
+				topics: topicNames
 			});
 		} catch (err) {
 			this.logger.error("Unable to create topics!", topicNames, err);

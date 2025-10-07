@@ -207,7 +207,7 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 
 		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(1);
 		expect(transporter.admin.createTopics).toHaveBeenCalledWith({
-			topics: [{ topic: "MOL-TEST.REQ.node" }, { topic: "MOL-TEST.RES.node" }]
+			topics: ["MOL-TEST.REQ.node", "MOL-TEST.RES.node"]
 		});
 
 		expect(Consumer).toHaveBeenCalledTimes(1);
