@@ -6,7 +6,8 @@ const C = require("../../../src/constants");
 // Mock @platformatic/kafka before requiring it
 const FakeKafkaAdmin = {
 	close: jest.fn(() => Promise.resolve()),
-	createTopics: jest.fn(() => Promise.resolve([]))
+	createTopics: jest.fn(() => Promise.resolve([])),
+	listTopics: jest.fn(() => Promise.resolve([]))
 };
 
 const FakeKafkaProducer = {
@@ -199,12 +200,14 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 	it("check makeSubscriptions", async () => {
 		Consumer.mockClear();
 		FakeKafkaConsumer.consume.mockClear();
+		transporter.admin.listTopics.mockClear();
 
 		await transporter.makeSubscriptions([
 			{ cmd: "REQ", nodeID: "node" },
 			{ cmd: "RES", nodeID: "node" }
 		]);
 
+		expect(transporter.admin.listTopics).toHaveBeenCalledTimes(1);
 		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(1);
 		expect(transporter.admin.createTopics).toHaveBeenCalledWith({
 			topics: ["MOL-TEST.REQ.node", "MOL-TEST.RES.node"]
@@ -229,27 +232,57 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 		expect(transporter.incomingMessage).toHaveBeenCalledWith("INFO", '{ ver: "3" }');
 	});
 
-	it("check makeSubscriptions - should handle topic already exists error", async () => {
-		transporter.broker.broadcastLocal = jest.fn();
+	it("check makeSubscriptions - should skip existing topics", async () => {
+		Consumer.mockClear();
+		FakeKafkaConsumer.consume.mockClear();
+		transporter.admin.listTopics.mockClear();
+		transporter.admin.createTopics.mockClear();
 
-		const topicExistsErr = new Error(
-			"Received response with error while executing API CreateTopics(v7)"
-		);
-		topicExistsErr.code = "PLT_KFK_RESPONSE";
-		topicExistsErr.message =
-			"Received response with error while executing API CreateTopics(v7): Topic with this name already exists";
-		transporter.admin.createTopics = jest.fn(() => Promise.reject(topicExistsErr));
+		// Mock listTopics to return one existing topic
+		transporter.admin.listTopics = jest.fn(() => Promise.resolve(["MOL-TEST.REQ.node"]));
 
-		// Should not throw error when topics already exist
 		await transporter.makeSubscriptions([
 			{ cmd: "REQ", nodeID: "node" },
 			{ cmd: "RES", nodeID: "node" }
 		]);
 
-		expect(transporter.broker.broadcastLocal).toHaveBeenCalledTimes(0);
+		expect(transporter.admin.listTopics).toHaveBeenCalledTimes(1);
+		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(1);
+		// Should only create the topic that doesn't exist
+		expect(transporter.admin.createTopics).toHaveBeenCalledWith({
+			topics: ["MOL-TEST.RES.node"]
+		});
+
 		expect(transporter.consumer).toBeDefined();
 
-		transporter.admin.createTopics = jest.fn(() => Promise.resolve([]));
+		// Reset mock
+		transporter.admin.listTopics = jest.fn(() => Promise.resolve([]));
+	});
+
+	it("check makeSubscriptions - should skip creation when all topics exist", async () => {
+		Consumer.mockClear();
+		FakeKafkaConsumer.consume.mockClear();
+		transporter.admin.listTopics.mockClear();
+		transporter.admin.createTopics.mockClear();
+
+		// Mock listTopics to return all topics as existing
+		transporter.admin.listTopics = jest.fn(() =>
+			Promise.resolve(["MOL-TEST.REQ.node", "MOL-TEST.RES.node"])
+		);
+
+		await transporter.makeSubscriptions([
+			{ cmd: "REQ", nodeID: "node" },
+			{ cmd: "RES", nodeID: "node" }
+		]);
+
+		expect(transporter.admin.listTopics).toHaveBeenCalledTimes(1);
+		// Should not call createTopics when all topics exist
+		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(0);
+
+		expect(transporter.consumer).toBeDefined();
+
+		// Reset mock
+		transporter.admin.listTopics = jest.fn(() => Promise.resolve([]));
 	});
 
 	it("check makeSubscriptions - should broadcast an error", async () => {

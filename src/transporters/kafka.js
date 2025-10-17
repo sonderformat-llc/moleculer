@@ -158,31 +158,34 @@ class KafkaTransporter extends Transporter {
 	async makeSubscriptions(topics) {
 		// Create topics
 		const topicNames = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
+
 		try {
-			await this.admin.createTopics({
-				topics: topicNames
-			});
-		} catch (err) {
-			// Check if error is because topics already exist (which is not a fatal error)
-			const isTopicExistsError =
-				err.code === "PLT_KFK_RESPONSE" &&
-				err.message &&
-				err.message.includes("Topic with this name already exists");
+			// Get list of existing topics
+			const existingTopics = await this.admin.listTopics();
 
-			if (isTopicExistsError) {
-				// Topics already exist, just log a debug message and continue
-				this.logger.debug("Some topics already exist, continuing...", topicNames);
-			} else {
-				// This is a real error, handle it
-				this.logger.error("Unable to create topics!", topicNames, err);
+			// Filter out topics that already exist
+			const topicsToCreate = topicNames.filter(topic => !existingTopics.includes(topic));
 
-				this.broker.broadcastLocal("$transporter.error", {
-					error: err,
-					module: "transporter",
-					type: C.FAILED_TOPIC_CREATION
+			if (topicsToCreate.length > 0) {
+				this.logger.debug(
+					`Creating ${topicsToCreate.length} new topics...`,
+					topicsToCreate
+				);
+				await this.admin.createTopics({
+					topics: topicsToCreate
 				});
-				throw err;
+			} else {
+				this.logger.debug("All topics already exist, skipping creation.");
 			}
+		} catch (err) {
+			this.logger.error("Unable to create topics!", topicNames, err);
+
+			this.broker.broadcastLocal("$transporter.error", {
+				error: err,
+				module: "transporter",
+				type: C.FAILED_TOPIC_CREATION
+			});
+			throw err;
 		}
 
 		// Create Consumer
