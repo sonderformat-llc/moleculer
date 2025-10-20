@@ -175,6 +175,17 @@ class KafkaTransporter extends Transporter {
 				await this.admin.createTopics({
 					topics: topicsToCreate
 				});
+
+				// Refresh producer metadata after creating topics
+				// This ensures the producer knows about newly created topics
+				if (this.producer) {
+					try {
+						await this.producer.metadata({ topics: topicNames });
+						this.logger.debug("Producer metadata refreshed for new topics.");
+					} catch (metaErr) {
+						this.logger.warn("Failed to refresh producer metadata", metaErr.message);
+					}
+				}
 			} else {
 				this.logger.debug("All topics already exist, skipping creation.");
 			}
