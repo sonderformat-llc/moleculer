@@ -81,7 +81,7 @@
     "@opentelemetry/instrumentation": "^0.205.0",
     "@opentelemetry/sdk-node": "^0.205.0",
     "@opentelemetry/semantic-conventions": "^1.37.0",
-    "@platformatic/kafka": "^1.17.0",
+    "@platformatic/kafka": "^1.18.0",
     "@sinonjs/fake-timers": "^15.0.0",
     "@types/bunyan": "^1.8.11",
     "@types/node": "^24.6.0",
@@ -143,7 +143,7 @@
     "recursive-watch": "^1.1.4"
   },
   "peerDependencies": {
-    "@platformatic/kafka": "^1.17.0",
+    "@platformatic/kafka": "^1.18.0",
     "amqplib": "^0.10.0",
     "bunyan": "^1.0.0",
     "cbor-x": "^1.2.0",
