@@ -12,8 +12,8 @@ This documentation leads you how you can migrate your project to be compatible w
 >}
 >```
 
-## Minimum Node 20
-The minimum supported Node version is changed from Node 10 to Node 20.
+## Minimum Node 22
+The minimum supported Node version is changed from Node 10 to Node 22.
 
 ## Legacy event handler is removed
 
