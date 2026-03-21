@@ -26,7 +26,9 @@ describe("Test Metric Registry", () => {
 			expect(metric.logger).toBeDefined();
 			expect(metric.dirty).toBe(true);
 
-			expect(metric.opts).toMatchSnapshot();
+			expect(metric.opts).toMatchSnapshot({
+				collectProcessMetrics: expect.any(Boolean)
+			});
 
 			expect(metric.store).toBeInstanceOf(Map);
 

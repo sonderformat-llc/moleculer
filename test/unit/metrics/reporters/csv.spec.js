@@ -244,6 +244,7 @@ describe("Test CSVReporter class", () => {
 				nodeID: "node-123",
 				metrics: {
 					enabled: true,
+					collectProcessMetrics: false,
 					reporter: {
 						type: "CSV",
 						options: {

@@ -6,17 +6,17 @@
 # Changes since v0.15.0-beta1
 
 ## Major Changes
-- **Minimum Node.js 20**: Updated minimum Node.js version from 18 to 20 for better performance and security
+- **Minimum Node.js 22**: Updated minimum Node.js version from 18 to 22 for better performance and security
 - **Stream handling improvements**: Fixed multiple stream-related issues including proper closing of dangling streams and enhanced safety for streaming operations
 - **Enhanced TypeScript support**: Added comprehensive typing improvements for service lifecycle handlers, middleware functions, and broker error handlers
-- **CI/CD modernization**: Updated GitHub Actions to ubuntu-22.04, expanded Node.js testing matrix (20.x, 22.x, 24.x), and migrated to `docker compose` commands
+- **CI/CD modernization**: Updated GitHub Actions to ubuntu-22.04, expanded Node.js testing matrix (22.x, 24.x), and migrated to `docker compose` commands
 - **Registry improvements**: Added `stopDelay` option for graceful shutdown and `serviceChangedDebounceTime` for better service change handling
 - **Performance optimizations**: Fixed Redis transporter Promise library interference, improved cache key handling, and enhanced pending request cleanup
 
 # Breaking changes
 
-## Minimum Node 20
-The minimum supported Node version is changed from Node 10 to Node 20.
+## Minimum Node 22
+The minimum supported Node version is changed from Node 10 to Node 22.
 
 ## Communication protocol has been changed
 The Moleculer communication protocol has been changed. The new protocol version is `5`. However all schema-based serializer has been removed from the core repo. It means v0.15 Moleculer nodes will able to communicate with v0.14 nodes, if you disable version checking in broker options.

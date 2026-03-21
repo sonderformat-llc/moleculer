@@ -1292,7 +1292,7 @@ class ServiceBroker {
 
 		let nodeID = null;
 		/** @type {ActionEndpoint} */
-		let endpoint = null;
+		let endpoint;
 		if (typeof actionName !== "string") {
 			endpoint = actionName;
 			actionName = endpoint.action.name;
