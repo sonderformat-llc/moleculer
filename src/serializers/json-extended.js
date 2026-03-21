@@ -16,6 +16,7 @@ const PREFIX_SET = "[[ST]]";
 const PREFIX_DATE = "[[DT]]";
 const PREFIX_BUFFER = "[[BF]]";
 const PREFIX_REGEXP = "[[RE]]";
+const PREFIX_ESCAPED_STRING = "[[ES]]";
 
 /**
  * Import types
@@ -80,6 +81,12 @@ class JSONExtSerializer extends BaseSerializer {
 				}
 			}
 		}
+
+		// Escape plain strings that start with "[[" to avoid false positives during deserialization
+		if (typeof value === "string" && value.charAt(0) === "[" && value.charAt(1) === "[") {
+			return PREFIX_ESCAPED_STRING + value;
+		}
+
 		return value;
 	}
 
@@ -108,6 +115,8 @@ class JSONExtSerializer extends BaseSerializer {
 					// eslint-disable-next-line security/detect-non-literal-regexp
 					return new RegExp(p.join("|"), flags);
 				}
+				case PREFIX_ESCAPED_STRING:
+					return value.slice(6);
 				default: {
 					if (this.hasCustomTypes) {
 						for (const custom of this.opts.customs) {
