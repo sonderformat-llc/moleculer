@@ -173,6 +173,40 @@ describe("Test JSONExtSerializer", () => {
 		expect(res.clazz.b).toBe("John");
 	});
 
+	it("should not corrupt strings starting with [[ prefix", () => {
+		const obj = {
+			a: "[[DT]]1000",
+			b: "[[BI]]12345",
+			c: "[[BF]]notabuffer",
+			d: "[[MP]]notamap",
+			e: "[[ST]]notaset",
+			f: "[[RE]]notaregexp",
+			g: "[[XX]]unknown prefix",
+			h: "[[something else",
+			i: "normal string"
+		};
+
+		const s = serializer.serialize(obj);
+		const res = serializer.deserialize(s);
+		expect(res).toEqual(obj);
+		expect(typeof res.a).toBe("string");
+		expect(res.a).toBe("[[DT]]1000");
+		expect(typeof res.b).toBe("string");
+		expect(res.b).toBe("[[BI]]12345");
+	});
+
+	it("should not corrupt strings starting with custom type prefix", () => {
+		const obj = {
+			a: "[[AB]]not a custom class"
+		};
+
+		const s = serializer.serialize(obj);
+		const res = serializer.deserialize(s);
+		expect(res).toEqual(obj);
+		expect(typeof res.a).toBe("string");
+		expect(res.a).toBe("[[AB]]not a custom class");
+	});
+
 	it("should serialize the event packet", () => {
 		const obj = {
 			ver: "5",
