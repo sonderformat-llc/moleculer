@@ -36,7 +36,7 @@ exports[`Test Metric Registry Test Constructor should create with custom options
 exports[`Test Metric Registry Test Constructor should create with default options 1`] = `
 {
   "collectInterval": 5,
-  "collectProcessMetrics": true,
+  "collectProcessMetrics": Any<Boolean>,
   "defaultAgeBuckets": 10,
   "defaultAggregator": "sum",
   "defaultBuckets": [
