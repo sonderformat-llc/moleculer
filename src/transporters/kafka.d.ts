@@ -2,10 +2,11 @@ import BaseTransporter = require("./base");
 
 declare namespace KafkaTransporter {
 	export interface KafkaTransporterOptions {
-		brokers?: string | string[];
-		client?: Record<string, any>;
+		clientId?: string;
+		bootstrapBrokers?: string | string[];
 		producer?: Record<string, any>;
 		consumer?: Record<string, any>;
+		admin?: Record<string, any>;
 		publish?: Record<string, any>;
 		publishMessage?: Record<string, any>;
 	}
@@ -14,7 +15,6 @@ declare namespace KafkaTransporter {
 declare class KafkaTransporter extends BaseTransporter {
 	opts: KafkaTransporter.KafkaTransporterOptions;
 
-	client: any;
 	producer: any;
 	consumer: any;
 	admin: any;

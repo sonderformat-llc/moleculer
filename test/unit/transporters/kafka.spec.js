@@ -19,7 +19,8 @@ let consumerStreamHandlers = {};
 const FakeKafkaStream = {
 	on: jest.fn((event, cb) => {
 		consumerStreamHandlers[event] = cb;
-	})
+	}),
+	close: jest.fn(() => Promise.resolve())
 };
 
 const FakeKafkaConsumer = {
@@ -94,6 +95,13 @@ describe("Test KafkaTransporter constructor", () => {
 			}
 		});
 	});
+
+	it("check constructor with string bootstrapBrokers option", () => {
+		let transporter = new KafkaTransporter({
+			bootstrapBrokers: "localhost:9092"
+		});
+		expect(transporter.opts.bootstrapBrokers).toEqual(["localhost:9092"]);
+	});
 });
 
 describe("Test KafkaTransporter connect & disconnect", () => {
@@ -121,7 +129,6 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 		expect(Producer).toHaveBeenCalledWith({
 			clientId: "moleculer-kafka",
 			bootstrapBrokers: ["localhost:9092"],
-			autocreateTopics: true,
 			extraProp: 7
 		});
 
@@ -130,6 +137,9 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 			clientId: "moleculer-kafka",
 			bootstrapBrokers: ["localhost:9092"]
 		});
+
+		// Connection validation: listTopics should be called
+		expect(FakeKafkaAdmin.listTopics).toHaveBeenCalled();
 	});
 
 	it("check connect - should broadcast error", async () => {
@@ -164,6 +174,7 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 	});
 
 	it("check disconnect", async () => {
+		FakeKafkaStream.close.mockClear();
 		await transporter.connect();
 		await transporter.makeSubscriptions([
 			{ cmd: "REQ", nodeID: "node" },
@@ -171,6 +182,7 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 		]);
 		await transporter.disconnect();
 
+		expect(FakeKafkaStream.close).toHaveBeenCalledTimes(1);
 		expect(FakeKafkaAdmin.close).toHaveBeenCalledTimes(1);
 		expect(FakeKafkaProducer.close).toHaveBeenCalledTimes(1);
 		expect(FakeKafkaConsumer.close).toHaveBeenCalledTimes(1);

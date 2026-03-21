@@ -45,11 +45,7 @@ class KafkaTransporter extends Transporter {
 				clientId: "moleculer-kafka",
 
 				// Bootstrap brokers for connection
-				bootstrapBrokers: Array.isArray(opts.bootstrapBrokers)
-					? opts.bootstrapBrokers
-					: opts.bootstrapBrokers
-						? [opts.bootstrapBrokers]
-						: null,
+				bootstrapBrokers: null,
 
 				// Producer options
 				producer: {},
@@ -70,10 +66,16 @@ class KafkaTransporter extends Transporter {
 			})
 		);
 
+		// Normalize bootstrapBrokers to array
+		if (opts.bootstrapBrokers && !Array.isArray(opts.bootstrapBrokers)) {
+			opts.bootstrapBrokers = [opts.bootstrapBrokers];
+		}
+
 		super(opts);
 
 		this.producer = null;
 		this.consumer = null;
+		this.consumerStream = null;
 		this.admin = null;
 	}
 
@@ -101,7 +103,6 @@ class KafkaTransporter extends Transporter {
 		this.producer = new Producer({
 			clientId: this.opts.clientId,
 			bootstrapBrokers: this.opts.bootstrapBrokers,
-			autocreateTopics: true, // Enable automatic topic creation/metadata fetching
 			...this.opts.producer
 		});
 
@@ -113,8 +114,11 @@ class KafkaTransporter extends Transporter {
 		});
 
 		try {
-			await this.onConnected();
+			// Validate connection by fetching metadata from the broker
+			await this.admin.listTopics();
+
 			this.logger.info("Kafka client is connected.");
+			await this.onConnected();
 		} catch (err) {
 			this.logger.error("Kafka Producer error", err.message);
 			this.logger.debug(err);
@@ -135,6 +139,10 @@ class KafkaTransporter extends Transporter {
 	 * @memberof KafkaTransporter
 	 */
 	async disconnect() {
+		if (this.consumerStream) {
+			await this.consumerStream.close();
+			this.consumerStream = null;
+		}
 		if (this.admin) {
 			await this.admin.close();
 			this.admin = null;
@@ -175,17 +183,6 @@ class KafkaTransporter extends Transporter {
 				await this.admin.createTopics({
 					topics: topicsToCreate
 				});
-
-				// Refresh producer metadata after creating topics
-				// This ensures the producer knows about newly created topics
-				if (this.producer) {
-					try {
-						await this.producer.metadata({ topics: topicNames });
-						this.logger.debug("Producer metadata refreshed for new topics.");
-					} catch (metaErr) {
-						this.logger.warn("Failed to refresh producer metadata", metaErr.message);
-					}
-				}
 			} else {
 				this.logger.debug("All topics already exist, skipping creation.");
 			}
@@ -213,19 +210,19 @@ class KafkaTransporter extends Transporter {
 
 			this.consumer = new Consumer(consumerOptions);
 
-			const stream = await this.consumer.consume({
+			this.consumerStream = await this.consumer.consume({
 				topics: topicNames,
 				autocommit: true
 			});
 
 			// Handle messages from the stream
-			stream.on("data", async message => {
+			this.consumerStream.on("data", async message => {
 				const topic = message.topic;
 				const cmd = topic.split(".")[1];
 				await this.receive(cmd, message.value);
 			});
 
-			stream.on("error", err => {
+			this.consumerStream.on("error", err => {
 				this.logger.error("Kafka Consumer stream error", err.message);
 				this.logger.debug(err);
 
