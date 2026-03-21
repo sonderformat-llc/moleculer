@@ -445,7 +445,7 @@ const utils = {
 		// Test if the string passed is valid
 		let results = parseByteStringRe.exec(v);
 		let floatValue;
-		let unit = "b";
+		let unit;
 
 		if (!results) {
 			// Nothing could be extracted from the given string
