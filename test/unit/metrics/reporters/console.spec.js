@@ -181,6 +181,7 @@ describe("Test ConsoleReporter class", () => {
 			nodeID: "node-123",
 			metrics: {
 				enabled: true,
+				collectProcessMetrics: false,
 				reporter: {
 					type: "Console",
 					options: {
