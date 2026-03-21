@@ -103,6 +103,7 @@ class KafkaTransporter extends Transporter {
 		this.producer = new Producer({
 			clientId: this.opts.clientId,
 			bootstrapBrokers: this.opts.bootstrapBrokers,
+			autocreateTopics: true,
 			...this.opts.producer
 		});
 

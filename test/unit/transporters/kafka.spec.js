@@ -129,6 +129,7 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 		expect(Producer).toHaveBeenCalledWith({
 			clientId: "moleculer-kafka",
 			bootstrapBrokers: ["localhost:9092"],
+			autocreateTopics: true,
 			extraProp: 7
 		});
 
