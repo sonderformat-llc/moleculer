@@ -17,20 +17,6 @@ const C = require("../constants");
  * @typedef {import("./kafka").KafkaTransporterOptions} KafkaTransporterOptions
  */
 
-const toMoleculerLogLevel = level => {
-	switch (level) {
-		case 0:
-		case 1:
-			return "error";
-		case 2:
-			return "warn";
-		case 4:
-			return "info";
-		case 5:
-			return "debug";
-	}
-};
-
 /**
  * Transporter for Kafka
  *
@@ -48,51 +34,48 @@ class KafkaTransporter extends Transporter {
 	 */
 	constructor(opts) {
 		if (typeof opts === "string") {
-			opts = { client: { brokers: [opts.replace("kafka://", "")] } };
+			opts = { bootstrapBrokers: [opts.replace("kafka://", "")] };
 		} else if (opts == null) {
 			opts = {};
 		}
 
 		opts = /** @type {KafkaTransporterOptions} */ (
 			defaultsDeep(opts, {
-				// KafkaClient options. More info: https://kafka.js.org/docs/configuration
-				client: {
-					brokers: Array.isArray(opts.brokers)
-						? opts.brokers
-						: opts.brokers
-							? [opts.brokers]
-							: null,
-					logLevel: 1,
-					logCreator: () => {
-						return ({ level, log }) => {
-							const { message, ...extra } = log;
-							if (log.error == "Topic creation errors") return;
-							this.logger[toMoleculerLogLevel(level)](message, extra);
-						};
-					}
-				},
+				// Client ID for all clients
+				clientId: "moleculer-kafka",
 
-				// KafkaProducer options. More info: https://kafka.js.org/docs/producing#options
+				// Bootstrap brokers for connection
+				bootstrapBrokers: null,
+
+				// Producer options
 				producer: {},
 
-				// ConsumerGroup options. More info: https://kafka.js.org/docs/consuming#a-name-options-a-options
+				// Consumer options
 				consumer: {},
 
-				// Advanced options for `send`. More info: https://kafka.js.org/docs/producing#producing-messages
+				// Admin options
+				admin: {},
+
+				// Publish options
 				publish: {},
 
-				// Advanced message options for `send`. More info: https://kafka.js.org/docs/producing#message-structure
+				// Message options for send
 				publishMessage: {
 					partition: 0
 				}
 			})
 		);
 
+		// Normalize bootstrapBrokers to array
+		if (opts.bootstrapBrokers && !Array.isArray(opts.bootstrapBrokers)) {
+			opts.bootstrapBrokers = [opts.bootstrapBrokers];
+		}
+
 		super(opts);
 
-		this.client = null;
 		this.producer = null;
 		this.consumer = null;
+		this.consumerStream = null;
 		this.admin = null;
 	}
 
@@ -102,26 +85,39 @@ class KafkaTransporter extends Transporter {
 	 * @memberof KafkaTransporter
 	 */
 	async connect() {
-		let Kafka;
+		let Producer, Admin;
 		try {
-			Kafka = require("kafkajs").Kafka;
+			const kafka = require("@platformatic/kafka");
+			Producer = kafka.Producer;
+			Admin = kafka.Admin;
 		} catch (err) {
 			/* istanbul ignore next */
 			this.broker.fatal(
-				"The 'kafkajs' package is missing. Please install it with 'npm install kafkajs --save' command.",
+				"The '@platformatic/kafka' package is missing. Please install it with 'npm install @platformatic/kafka --save' command.",
 				err,
 				true
 			);
 		}
 
-		this.client = new Kafka(this.opts.client);
-
 		// Create Producer
-		this.producer = this.client.producer(this.opts.producer);
-		this.admin = this.client.admin();
+		this.producer = new Producer({
+			clientId: this.opts.clientId,
+			bootstrapBrokers: this.opts.bootstrapBrokers,
+			autocreateTopics: true,
+			...this.opts.producer
+		});
+
+		// Create Admin
+		this.admin = new Admin({
+			clientId: this.opts.clientId,
+			bootstrapBrokers: this.opts.bootstrapBrokers,
+			...this.opts.admin
+		});
+
 		try {
-			await this.admin.connect();
-			await this.producer.connect();
+			// Validate connection by fetching metadata from the broker
+			await this.admin.listTopics();
+
 			this.logger.info("Kafka client is connected.");
 			await this.onConnected();
 		} catch (err) {
@@ -144,16 +140,20 @@ class KafkaTransporter extends Transporter {
 	 * @memberof KafkaTransporter
 	 */
 	async disconnect() {
+		if (this.consumerStream) {
+			await this.consumerStream.close();
+			this.consumerStream = null;
+		}
 		if (this.admin) {
-			await this.admin.disconnect();
+			await this.admin.close();
 			this.admin = null;
 		}
 		if (this.producer) {
-			await this.producer.disconnect();
+			await this.producer.close();
 			this.producer = null;
 		}
 		if (this.consumer) {
-			await this.consumer.disconnect();
+			await this.consumer.close();
 			this.consumer = null;
 		}
 	}
@@ -167,11 +167,28 @@ class KafkaTransporter extends Transporter {
 	 */
 	async makeSubscriptions(topics) {
 		// Create topics
-		topics = topics.map(({ cmd, nodeID }) => ({ topic: this.getTopicName(cmd, nodeID) }));
+		const topicNames = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
+
 		try {
-			await this.admin.createTopics({ topics });
+			// Get list of existing topics
+			const existingTopics = await this.admin.listTopics();
+
+			// Filter out topics that already exist
+			const topicsToCreate = topicNames.filter(topic => !existingTopics.includes(topic));
+
+			if (topicsToCreate.length > 0) {
+				this.logger.debug(
+					`Creating ${topicsToCreate.length} new topics...`,
+					topicsToCreate
+				);
+				await this.admin.createTopics({
+					topics: topicsToCreate
+				});
+			} else {
+				this.logger.debug("All topics already exist, skipping creation.");
+			}
 		} catch (err) {
-			this.logger.error("Unable to create topics!", topics, err);
+			this.logger.error("Unable to create topics!", topicNames, err);
 
 			this.broker.broadcastLocal("$transporter.error", {
 				error: err,
@@ -183,45 +200,41 @@ class KafkaTransporter extends Transporter {
 
 		// Create Consumer
 		try {
-			const consumerOptions = Object.assign(
-				{
-					// id: "default-kafka-consumer",
-					// kafkaHost: this.opts.host,
-					groupId: this.broker.instanceID
-					// groupId: this.broker.nodeID
-					// fromOffset: "latest",
-					// encoding: "buffer"
-				},
-				this.opts.consumer
-			);
+			const Consumer = require("@platformatic/kafka").Consumer;
 
-			this.consumer = this.client.consumer(consumerOptions);
+			const consumerOptions = {
+				clientId: this.opts.clientId,
+				bootstrapBrokers: this.opts.bootstrapBrokers,
+				groupId: this.broker.instanceID,
+				...this.opts.consumer
+			};
 
-			let groupJoinResolve;
-			const groupJoinPromise = new Promise(resolve => (groupJoinResolve = resolve));
+			this.consumer = new Consumer(consumerOptions);
 
-			this.consumer.on(this.consumer.events.GROUP_JOIN, event => groupJoinResolve(event));
-
-			await this.consumer.connect();
-
-			this.consumer.subscribe({ topics: topics.map(topic => topic.topic) });
-			// Ref: https://kafka.js.org/docs/consuming#a-name-each-message-a-eachmessage
-			this.consumer.run({
-				eachMessage: async ({ topic, message }) => {
-					const cmd = topic.split(".")[1];
-					await this.receive(cmd, message.value);
-					// console.log({
-					// 	topic,
-					// 	key: (message.key ? message.key.toString() : ""),
-					// 	value: message.value.toString(),
-					// 	headers: message.headers,
-					// });
-				}
+			this.consumerStream = await this.consumer.consume({
+				topics: topicNames,
+				autocommit: true
 			});
 
-			this.logger.debug("Wait for consumer to join to consumer group...");
-			await groupJoinPromise;
-			this.logger.info("The consumer joined to consumer group successfully.");
+			// Handle messages from the stream
+			this.consumerStream.on("data", async message => {
+				const topic = message.topic;
+				const cmd = topic.split(".")[1];
+				await this.receive(cmd, message.value);
+			});
+
+			this.consumerStream.on("error", err => {
+				this.logger.error("Kafka Consumer stream error", err.message);
+				this.logger.debug(err);
+
+				this.broker.broadcastLocal("$transporter.error", {
+					error: err,
+					module: "transporter",
+					type: C.FAILED_CONSUMER_ERROR
+				});
+			});
+
+			this.logger.info("The consumer started successfully.");
 		} catch (err) {
 			this.logger.error("Kafka Consumer error", err.message);
 			this.logger.debug(err);
@@ -247,13 +260,13 @@ class KafkaTransporter extends Transporter {
 	 */
 	async send(topic, data, { packet }) {
 		/* istanbul ignore next*/
-		if (!this.client) return;
+		if (!this.producer) return;
 
 		try {
 			await this.producer.send({
-				topic: this.getTopicName(packet.type, packet.target),
 				messages: [
 					{
+						topic: this.getTopicName(packet.type, packet.target),
 						value: data,
 						...this.opts.publishMessage
 					}

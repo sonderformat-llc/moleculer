@@ -3,66 +3,41 @@ const Transit = require("../../../src/transit");
 const P = require("../../../src/packets");
 const C = require("../../../src/constants");
 
-jest.mock("kafkajs");
-
-let Kafka = require("kafkajs");
-
+// Mock @platformatic/kafka before requiring it
 const FakeKafkaAdmin = {
-	connect: jest.fn(),
-	disconnect: jest.fn(),
-	createTopics: jest.fn()
+	close: jest.fn(() => Promise.resolve()),
+	createTopics: jest.fn(() => Promise.resolve([])),
+	listTopics: jest.fn(() => Promise.resolve([]))
 };
 
 const FakeKafkaProducer = {
-	connect: jest.fn(),
-	disconnect: jest.fn(),
-	send: jest.fn()
+	close: jest.fn(() => Promise.resolve()),
+	send: jest.fn(() => Promise.resolve())
 };
 
-let consumerRunOpts = {};
-const FakeKafkaConsumer = {
-	connect: jest.fn(),
-	disconnect: jest.fn(),
-	subscribe: jest.fn(),
-	events: {
-		GROUP_JOIN: "consumer.group_join"
-	},
+let consumerStreamHandlers = {};
+const FakeKafkaStream = {
 	on: jest.fn((event, cb) => {
-		if (event == "consumer.group_join") cb();
+		consumerStreamHandlers[event] = cb;
 	}),
-	run: jest.fn(opts => {
-		consumerRunOpts = opts;
-	})
+	close: jest.fn(() => Promise.resolve())
 };
 
-const FakeKafkaClient = {
-	admin: jest.fn(() => FakeKafkaAdmin),
-	producer: jest.fn(() => FakeKafkaProducer),
-	consumer: jest.fn(() => FakeKafkaConsumer)
+const FakeKafkaConsumer = {
+	close: jest.fn(() => Promise.resolve()),
+	consume: jest.fn(() => Promise.resolve(FakeKafkaStream))
 };
 
-Kafka.Kafka = jest.fn(() => FakeKafkaClient);
-/*
-const producerCallbacks = {};
-Kafka.Producer = jest.fn(() => {
-	return {
-		on: jest.fn((event, cb) => (producerCallbacks[event] = cb)),
-		//disconnect: jest.fn(),
-		//subscribe: jest.fn(),
-		send: jest.fn((data, cb) => cb()),
+const Producer = jest.fn(() => FakeKafkaProducer);
+const Consumer = jest.fn(() => FakeKafkaConsumer);
+const Admin = jest.fn(() => FakeKafkaAdmin);
 
-		callbacks: producerCallbacks
-	};
-});
-const groupCallbacks = {};
-Kafka.ConsumerGroup = jest.fn(() => {
-	return {
-		on: jest.fn((event, cb) => (groupCallbacks[event] = cb)),
-		close: jest.fn(cb => (groupCallbacks.close = cb)),
-		callbacks: groupCallbacks
-	};
-});
-*/
+jest.mock("@platformatic/kafka", () => ({
+	Producer,
+	Consumer,
+	Admin
+}));
+
 const KafkaTransporter = require("../../../src/transporters/kafka");
 
 describe("Test KafkaTransporter constructor", () => {
@@ -70,20 +45,17 @@ describe("Test KafkaTransporter constructor", () => {
 		let transporter = new KafkaTransporter();
 		expect(transporter).toBeDefined();
 		expect(transporter.opts).toEqual({
-			client: {
-				brokers: null,
-				logCreator: expect.any(Function),
-				logLevel: 1
-			},
+			clientId: "moleculer-kafka",
+			bootstrapBrokers: null,
 			producer: {},
 			consumer: {},
+			admin: {},
 			publish: {},
 			publishMessage: {
 				partition: 0
 			}
 		});
 		expect(transporter.connected).toBe(false);
-		expect(transporter.client).toBeNull();
 		expect(transporter.producer).toBeNull();
 		expect(transporter.consumer).toBeNull();
 	});
@@ -91,13 +63,11 @@ describe("Test KafkaTransporter constructor", () => {
 	it("check constructor with string param", () => {
 		let transporter = new KafkaTransporter("localhost:9092");
 		expect(transporter.opts).toEqual({
-			client: {
-				brokers: ["localhost:9092"],
-				logCreator: expect.any(Function),
-				logLevel: 1
-			},
+			clientId: "moleculer-kafka",
+			bootstrapBrokers: ["localhost:9092"],
 			producer: {},
 			consumer: {},
+			admin: {},
 			publish: {},
 			publishMessage: {
 				partition: 0
@@ -107,27 +77,30 @@ describe("Test KafkaTransporter constructor", () => {
 
 	it("check constructor with options", () => {
 		let opts = {
-			client: {
-				brokers: ["localhost:9092"]
-			},
+			bootstrapBrokers: ["localhost:9092"],
 			publishMessage: {
 				partition: 1
 			}
 		};
 		let transporter = new KafkaTransporter(opts);
 		expect(transporter.opts).toEqual({
-			client: {
-				brokers: ["localhost:9092"],
-				logCreator: expect.any(Function),
-				logLevel: 1
-			},
+			clientId: "moleculer-kafka",
+			bootstrapBrokers: ["localhost:9092"],
 			producer: {},
 			consumer: {},
+			admin: {},
 			publish: {},
 			publishMessage: {
 				partition: 1
 			}
 		});
+	});
+
+	it("check constructor with string bootstrapBrokers option", () => {
+		let transporter = new KafkaTransporter({
+			bootstrapBrokers: "localhost:9092"
+		});
+		expect(transporter.opts.bootstrapBrokers).toEqual(["localhost:9092"]);
 	});
 });
 
@@ -139,9 +112,7 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 
 	beforeEach(() => {
 		transporter = new KafkaTransporter({
-			client: {
-				some: "thing"
-			},
+			bootstrapBrokers: ["localhost:9092"],
 			producer: {
 				extraProp: 7
 			}
@@ -151,29 +122,32 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 
 	it("check connect", async () => {
 		await transporter.connect();
-		expect(transporter.client).toBeDefined();
-		expect(transporter.admin).toBeDefined();
 		expect(transporter.producer).toBeDefined();
+		expect(transporter.admin).toBeDefined();
 
-		expect(Kafka.Kafka).toHaveBeenCalledTimes(1);
-		expect(Kafka.Kafka).toHaveBeenCalledWith({
-			brokers: null,
-			logCreator: expect.any(Function),
-			logLevel: 1,
-			some: "thing"
-		});
-
-		expect(FakeKafkaClient.producer).toHaveBeenCalledTimes(1);
-		expect(FakeKafkaClient.producer).toHaveBeenCalledWith({
+		expect(Producer).toHaveBeenCalledTimes(1);
+		expect(Producer).toHaveBeenCalledWith({
+			clientId: "moleculer-kafka",
+			bootstrapBrokers: ["localhost:9092"],
+			autocreateTopics: true,
 			extraProp: 7
 		});
+
+		expect(Admin).toHaveBeenCalledTimes(1);
+		expect(Admin).toHaveBeenCalledWith({
+			clientId: "moleculer-kafka",
+			bootstrapBrokers: ["localhost:9092"]
+		});
+
+		// Connection validation: listTopics should be called
+		expect(FakeKafkaAdmin.listTopics).toHaveBeenCalled();
 	});
 
 	it("check connect - should broadcast error", async () => {
 		broker.broadcastLocal = jest.fn();
 
 		const origErr = new Error("Ups");
-		FakeKafkaAdmin.connect = jest.fn(() => Promise.reject(origErr));
+		transporter.onConnected = jest.fn(() => Promise.reject(origErr));
 		try {
 			await transporter.connect();
 			expect(1).toBe(2);
@@ -188,7 +162,6 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 				type: C.FAILED_PUBLISHER_ERROR
 			});
 		}
-		FakeKafkaAdmin.connect = jest.fn();
 	});
 
 	it("check onConnected after connect", () => {
@@ -202,6 +175,7 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 	});
 
 	it("check disconnect", async () => {
+		FakeKafkaStream.close.mockClear();
 		await transporter.connect();
 		await transporter.makeSubscriptions([
 			{ cmd: "REQ", nodeID: "node" },
@@ -209,9 +183,10 @@ describe("Test KafkaTransporter connect & disconnect", () => {
 		]);
 		await transporter.disconnect();
 
-		expect(FakeKafkaAdmin.disconnect).toHaveBeenCalledTimes(1);
-		expect(FakeKafkaProducer.disconnect).toHaveBeenCalledTimes(1);
-		expect(FakeKafkaConsumer.disconnect).toHaveBeenCalledTimes(1);
+		expect(FakeKafkaStream.close).toHaveBeenCalledTimes(1);
+		expect(FakeKafkaAdmin.close).toHaveBeenCalledTimes(1);
+		expect(FakeKafkaProducer.close).toHaveBeenCalledTimes(1);
+		expect(FakeKafkaConsumer.close).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -222,7 +197,7 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 	beforeEach(async () => {
 		msgHandler = jest.fn();
 		transporter = new KafkaTransporter({
-			client: { brokers: ["kafka://kafka-server:1234"] },
+			bootstrapBrokers: ["kafka-server:1234"],
 			consumer: { extraProp: 5 }
 		});
 		transporter.init(
@@ -237,36 +212,91 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 	});
 
 	it("check makeSubscriptions", async () => {
-		FakeKafkaClient.consumer.mockClear();
-		FakeKafkaConsumer.connect.mockClear();
+		Consumer.mockClear();
+		FakeKafkaConsumer.consume.mockClear();
+		transporter.admin.listTopics.mockClear();
 
 		await transporter.makeSubscriptions([
 			{ cmd: "REQ", nodeID: "node" },
 			{ cmd: "RES", nodeID: "node" }
 		]);
 
+		expect(transporter.admin.listTopics).toHaveBeenCalledTimes(1);
 		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(1);
 		expect(transporter.admin.createTopics).toHaveBeenCalledWith({
-			topics: [{ topic: "MOL-TEST.REQ.node" }, { topic: "MOL-TEST.RES.node" }]
+			topics: ["MOL-TEST.REQ.node", "MOL-TEST.RES.node"]
 		});
 
-		expect(FakeKafkaClient.consumer).toHaveBeenCalledTimes(1);
-		expect(FakeKafkaClient.consumer).toHaveBeenCalledWith({
+		expect(Consumer).toHaveBeenCalledTimes(1);
+		expect(Consumer).toHaveBeenCalledWith({
+			clientId: "moleculer-kafka",
+			bootstrapBrokers: ["kafka-server:1234"],
 			groupId: transporter.broker.instanceID,
 			extraProp: 5
 		});
 
-		expect(FakeKafkaConsumer.connect).toHaveBeenCalledTimes(1);
+		expect(FakeKafkaConsumer.consume).toHaveBeenCalledTimes(1);
 		expect(transporter.consumer).toBeDefined();
 
-		consumerRunOpts.eachMessage({
+		consumerStreamHandlers.data({
 			topic: "MOL.INFO.node-2",
-			message: {
-				value: '{ ver: "3" }'
-			}
+			value: '{ ver: "3" }'
 		});
 		expect(transporter.incomingMessage).toHaveBeenCalledTimes(1);
 		expect(transporter.incomingMessage).toHaveBeenCalledWith("INFO", '{ ver: "3" }');
+	});
+
+	it("check makeSubscriptions - should skip existing topics", async () => {
+		Consumer.mockClear();
+		FakeKafkaConsumer.consume.mockClear();
+		transporter.admin.listTopics.mockClear();
+		transporter.admin.createTopics.mockClear();
+
+		// Mock listTopics to return one existing topic
+		transporter.admin.listTopics = jest.fn(() => Promise.resolve(["MOL-TEST.REQ.node"]));
+
+		await transporter.makeSubscriptions([
+			{ cmd: "REQ", nodeID: "node" },
+			{ cmd: "RES", nodeID: "node" }
+		]);
+
+		expect(transporter.admin.listTopics).toHaveBeenCalledTimes(1);
+		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(1);
+		// Should only create the topic that doesn't exist
+		expect(transporter.admin.createTopics).toHaveBeenCalledWith({
+			topics: ["MOL-TEST.RES.node"]
+		});
+
+		expect(transporter.consumer).toBeDefined();
+
+		// Reset mock
+		transporter.admin.listTopics = jest.fn(() => Promise.resolve([]));
+	});
+
+	it("check makeSubscriptions - should skip creation when all topics exist", async () => {
+		Consumer.mockClear();
+		FakeKafkaConsumer.consume.mockClear();
+		transporter.admin.listTopics.mockClear();
+		transporter.admin.createTopics.mockClear();
+
+		// Mock listTopics to return all topics as existing
+		transporter.admin.listTopics = jest.fn(() =>
+			Promise.resolve(["MOL-TEST.REQ.node", "MOL-TEST.RES.node"])
+		);
+
+		await transporter.makeSubscriptions([
+			{ cmd: "REQ", nodeID: "node" },
+			{ cmd: "RES", nodeID: "node" }
+		]);
+
+		expect(transporter.admin.listTopics).toHaveBeenCalledTimes(1);
+		// Should not call createTopics when all topics exist
+		expect(transporter.admin.createTopics).toHaveBeenCalledTimes(0);
+
+		expect(transporter.consumer).toBeDefined();
+
+		// Reset mock
+		transporter.admin.listTopics = jest.fn(() => Promise.resolve([]));
 	});
 
 	it("check makeSubscriptions - should broadcast an error", async () => {
@@ -293,14 +323,14 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 			});
 		}
 
-		transporter.admin.createTopics = jest.fn();
+		transporter.admin.createTopics = jest.fn(() => Promise.resolve([]));
 	});
 
 	it("check makeSubscriptions - should broadcast a consumer error", async () => {
 		transporter.broker.broadcastLocal = jest.fn();
 
 		const origErr = new Error("Ups");
-		FakeKafkaConsumer.run = jest.fn(() => {
+		FakeKafkaConsumer.consume = jest.fn(() => {
 			throw origErr;
 		});
 
@@ -320,7 +350,7 @@ describe("Test KafkaTransporter makeSubscriptions", () => {
 			});
 		}
 
-		FakeKafkaConsumer.run = jest.fn();
+		FakeKafkaConsumer.consume = jest.fn(() => Promise.resolve(FakeKafkaStream));
 	});
 });
 
@@ -331,7 +361,7 @@ describe("Test KafkaTransporter subscribe & publish", () => {
 	beforeEach(async () => {
 		msgHandler = jest.fn();
 		transporter = new KafkaTransporter({
-			client: { brokers: ["kafka://kafka-server:1234"] },
+			bootstrapBrokers: ["kafka-server:1234"],
 			publish: { extraProp: 5 },
 			publishMessage: { partition: 2 }
 		});
@@ -351,8 +381,13 @@ describe("Test KafkaTransporter subscribe & publish", () => {
 
 		expect(transporter.producer.send).toHaveBeenCalledTimes(1);
 		expect(transporter.producer.send).toHaveBeenCalledWith({
-			topic: "MOL-TEST.INFO.node2",
-			messages: [{ value: Buffer.from("json data"), partition: 2 }],
+			messages: [
+				{
+					topic: "MOL-TEST.INFO.node2",
+					value: Buffer.from("json data"),
+					partition: 2
+				}
+			],
 			extraProp: 5
 		});
 
@@ -382,6 +417,6 @@ describe("Test KafkaTransporter subscribe & publish", () => {
 			});
 		}
 
-		FakeKafkaConsumer.run = jest.fn();
+		FakeKafkaProducer.send = jest.fn(() => Promise.resolve());
 	});
 });
