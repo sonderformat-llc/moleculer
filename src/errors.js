@@ -510,7 +510,7 @@ function recreateError(err) {
 /**
  * Error Regenerator
  * @class Regenerator
- * @implementes {RegeneratorClass}
+ * @implements {RegeneratorClass}
  */
 class Regenerator {
 	/**

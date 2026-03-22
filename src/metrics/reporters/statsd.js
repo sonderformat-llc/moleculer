@@ -215,7 +215,7 @@ class StatsDReporter extends BaseReporter {
 	 * @memberof StatsDReporter
 	 */
 	labelsToTags(itemLabels) {
-		const labels = Object.assign({}, itemLabels || {});
+		const labels = Object.assign({}, this.defaultLabels || {}, itemLabels || {});
 		const keys = Object.keys(labels);
 		if (keys.length === 0) return "";
 

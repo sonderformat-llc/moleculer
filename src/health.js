@@ -33,7 +33,7 @@ const getCpuInfo = () => {
 		load5: load[1],
 		load15: load[2],
 		cores: cores,
-		utilization: Math.min(Math.floor((load[0] * 100) / cores), 100)
+		utilization: cores > 0 ? Math.min(Math.floor((load[0] * 100) / cores), 100) : null
 	};
 
 	return cpu;

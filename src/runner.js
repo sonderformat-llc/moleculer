@@ -571,7 +571,7 @@ class MoleculerRunner {
 			.then(() => this.processFlags(args))
 			.then(() => {
 				if (this.flags.instances !== undefined && cluster.isPrimary) {
-					this.startWorkers(this.flags.instances);
+					return this.startWorkers(this.flags.instances);
 				} else {
 					return this._run();
 				}
