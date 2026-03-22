@@ -9,7 +9,6 @@
 [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20Moleculer%20Guru-006BFF)](https://gurubase.io/g/moleculer)
 
 [![Downloads](https://img.shields.io/npm/dm/moleculer.svg)](https://www.npmjs.com/package/moleculer)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmoleculerjs%2Fmoleculer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmoleculerjs%2Fmoleculer?ref=badge_shield)
 [![Patreon](docs/assets/patreon.svg)][patreon]
 
 # Moleculer [![NPM version](https://img.shields.io/npm/v/moleculer.svg)](https://www.npmjs.com/package/moleculer) [![Twitter URL](https://img.shields.io/twitter/url/http/shields.io.svg?style=social&logo=twitter)](https://twitter.com/intent/tweet?text=Moleculer%20is%20a%20modern%20microservices%20framework%20for%20Node.js&url=https://github.com/moleculerjs/moleculer&via=MoleculerJS&hashtags=nodejs,javascript,microservices)
@@ -153,8 +152,6 @@ We welcome you to join in the development of Moleculer. Please read our [contrib
 
 # License
 Moleculer is available under the [MIT license](https://tldrlegal.com/license/mit-license).
-
-[3rd party licenses](https://app.fossa.io/reports/09fc5b4f-d321-4f68-b859-8c61fe3eb6dc)
 
 # Contact
 Copyright (c) 2016-2026 MoleculerJS
