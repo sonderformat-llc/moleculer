@@ -1,9 +1,17 @@
 "use strict";
 
 const _ = require("lodash");
-const fetch = require("node-fetch");
 const BaseTraceExporter = require("./base");
-const { isFunction } = require("../../utils");
+const { isFunction, isObject } = require("../../utils");
+
+/**
+ * Import types
+ *
+ * @typedef {import("./zipkin")} ZipkinTraceExporterClass
+ * @typedef {import("./zipkin").ZipkinTraceExporterOptions} ZipkinTraceExporterOptions
+ * @typedef {import("../tracer")} Tracer
+ * @typedef {import("../span")} Span
+ */
 
 /**
  * Trace Exporter for Zipkin.
@@ -12,22 +20,21 @@ const { isFunction } = require("../../utils");
  * API v1: https://zipkin.io/pages/data_model.html
  *
  * @class ZipkinTraceExporter
+ * @implements {ZipkinTraceExporterClass}
  */
 class ZipkinTraceExporter extends BaseTraceExporter {
 	/**
 	 * Creates an instance of ZipkinTraceExporter.
-	 * @param {Object?} opts
+	 * @param {ZipkinTraceExporterOptions?} opts
 	 * @memberof ZipkinTraceExporter
 	 */
 	constructor(opts) {
 		super(opts);
 
+		/** @type {ZipkinTraceExporterOptions} */
 		this.opts = _.defaultsDeep(this.opts, {
 			/** @type {String} Base URL for Zipkin server. */
 			baseURL: process.env.ZIPKIN_URL || "http://localhost:9411",
-
-			/** @type {String} Zipkin REST API version. */
-			//version: "v2",
 
 			/** @type {Number} Batch send time interval in seconds. */
 			interval: 5,
@@ -61,8 +68,6 @@ class ZipkinTraceExporter extends BaseTraceExporter {
 	 */
 	init(tracer) {
 		super.init(tracer);
-
-		fetch.Promise = this.broker.Promise;
 
 		if (this.opts.interval > 0) {
 			this.timer = setInterval(() => this.flush(), this.opts.interval * 1000);
@@ -104,7 +109,7 @@ class ZipkinTraceExporter extends BaseTraceExporter {
 	 * @memberof ZipkinTraceExporter
 	 */
 	flush() {
-		if (this.queue.length == 0) return;
+		if (this.queue.length === 0) return;
 
 		const data = this.generateTracingData();
 		this.queue.length = 0;
@@ -136,7 +141,7 @@ class ZipkinTraceExporter extends BaseTraceExporter {
 	/**
 	 * Generate tracing data for Zipkin
 	 *
-	 * @returns {Array<Object>}
+	 * @returns {Record<string, any>[]}
 	 * @memberof ZipkinTraceExporter
 	 */
 	generateTracingData() {
@@ -147,7 +152,7 @@ class ZipkinTraceExporter extends BaseTraceExporter {
 	 * Create Zipkin v2 payload from metric event
 	 *
 	 * @param {Span} span
-	 * @returns {Object}
+	 * @returns {Record<string, any>}
 	 */
 	makePayload(span) {
 		const serviceName = span.service ? span.service.fullName : null;
@@ -178,7 +183,8 @@ class ZipkinTraceExporter extends BaseTraceExporter {
 		};
 
 		if (span.error) {
-			payload.tags["error"] = span.error.message;
+			if (isObject(span.error)) payload.tags["error"] = span.error.message;
+			else payload.tags["error"] = "Unknown error";
 
 			payload.annotations.push({
 				value: "error",

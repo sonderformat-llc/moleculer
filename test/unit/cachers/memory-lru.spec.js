@@ -1,6 +1,8 @@
 const ServiceBroker = require("../../../src/service-broker");
 const MemoryLRUCacher = require("../../../src/cachers/memory-lru");
-const lolex = require("@sinonjs/fake-timers");
+// const lolex = require("@sinonjs/fake-timers");
+const { Clock } = require("clock-mock");
+const clock = new Clock();
 
 describe("Test MemoryLRUCacher constructor", () => {
 	it("should create an empty options", () => {
@@ -81,15 +83,49 @@ describe("Test MemoryLRUCacher set & get", () => {
 		});
 	});
 
-	it("should give null if key not exist", () => {
+	it("should give undefined if key not exist", () => {
 		return cacher.get("123123").then(obj => {
-			expect(obj).toBeNull();
+			expect(obj).toBeUndefined();
+		});
+	});
+});
+
+describe("Test MemoryLRUCacher set & get with missingResponse", () => {
+	let broker = new ServiceBroker({ logger: false });
+	const MISSING = Symbol("MISSING");
+	let cacher = new MemoryLRUCacher({ missingResponse: MISSING });
+	cacher.init(broker);
+
+	let key = "tst123";
+	let data1 = {
+		a: 1,
+		b: false,
+		c: "Test",
+		d: {
+			e: 55
+		}
+	};
+
+	it("should save the data with key", () => {
+		cacher.set(key, data1);
+		expect(cacher.cache.get(key)).toBe(data1);
+	});
+
+	it("should give back the data by key", () => {
+		return cacher.get(key).then(obj => {
+			expect(obj).toBeDefined();
+			expect(obj).toEqual(data1);
+		});
+	});
+
+	it("should give undefined if key not exist", () => {
+		return cacher.get("123123").then(obj => {
+			expect(obj).toBe(MISSING);
 		});
 	});
 });
 
 describe("Test MemoryLRUCacher set & get with default cloning enabled", () => {
-	let clock = lolex.install({ shouldClearNativeTimers: true });
 	let broker = new ServiceBroker({ logger: false });
 	let cacher = new MemoryLRUCacher({ clone: true });
 	cacher.init(broker);
@@ -105,8 +141,6 @@ describe("Test MemoryLRUCacher set & get with default cloning enabled", () => {
 	};
 
 	afterAll(async () => {
-		await clock.uninstall();
-
 		await cacher.close();
 		await broker.stop();
 	});
@@ -179,7 +213,6 @@ describe("Test MemoryLRUCacher set & get with default cloning disabled", () => {
 });
 
 describe("Test MemoryLRUCacher set & get with custom cloning", () => {
-	let clock;
 	const clone = jest.fn(data => JSON.parse(JSON.stringify(data)));
 	let broker = new ServiceBroker({ logger: false });
 	let cacher = new MemoryLRUCacher({ clone });
@@ -195,13 +228,7 @@ describe("Test MemoryLRUCacher set & get with custom cloning", () => {
 		}
 	};
 
-	beforeAll(async () => {
-		clock = lolex.install({ shouldClearNativeTimers: true });
-	});
-
 	afterAll(async () => {
-		await clock.uninstall();
-
 		await cacher.close();
 		await broker.stop();
 	});
@@ -245,9 +272,9 @@ describe("Test MemoryLRUCacher delete", () => {
 		expect(cacher.cache.get(key)).toBeUndefined();
 	});
 
-	it("should give null", () => {
+	it("should give undefined", () => {
 		return cacher.get(key).then(obj => {
-			expect(obj).toBeNull();
+			expect(obj).toBeUndefined();
 		});
 	});
 
@@ -295,9 +322,9 @@ describe("Test MemoryLRUCacher clean", () => {
 		cacher.clean("tst*");
 	});
 
-	it("should give null for key1", () => {
+	it("should give undefined for key1", () => {
 		return cacher.get(key1).then(obj => {
-			expect(obj).toBeNull();
+			expect(obj).toBeUndefined();
 		});
 	});
 
@@ -309,12 +336,12 @@ describe("Test MemoryLRUCacher clean", () => {
 
 	it("should clean all keys", () => {
 		cacher.clean();
-		expect(Object.keys(cacher.cache).length).toBe(0);
+		expect(cacher.cache.size).toBe(0);
 	});
 
-	it("should give null for key2 too", () => {
+	it("should give undefined for key2 too", () => {
 		return cacher.get(key1).then(obj => {
-			expect(obj).toBeNull();
+			expect(obj).toBeUndefined();
 		});
 	});
 
@@ -339,7 +366,7 @@ describe("Test MemoryLRUCacher clean", () => {
 });
 
 describe("Test MemoryLRUCacher expired method", () => {
-	let clock;
+	clock.advance(1);
 
 	let broker = new ServiceBroker({ logger: false });
 	let cacher = new MemoryLRUCacher({
@@ -360,21 +387,24 @@ describe("Test MemoryLRUCacher expired method", () => {
 	let data2 = "Data2";
 
 	beforeAll(async () => {
-		clock = lolex.install({ shouldClearNativeTimers: true });
+		clock.enter();
 	});
-	afterAll(() => clock.uninstall());
+
+	afterAll(async () => {
+		clock.exit();
+	});
 
 	it("should save the data with key", () => {
 		cacher.set(key1, data1);
-		clock.tick(35 * 1000);
+		clock.advance(35 * 1000);
 		cacher.set(key2, data2);
 	});
 
-	it("should give null for key1", () => {
-		clock.tick(30 * 1000);
+	it("should give undefined for key1", () => {
+		clock.advance(30 * 1000);
 
 		return cacher.get(key1).then(obj => {
-			expect(obj).toBeNull();
+			expect(obj).toBeUndefined();
 		});
 	});
 
@@ -385,9 +415,9 @@ describe("Test MemoryLRUCacher expired method", () => {
 	});
 
 	it("should give back data 2 for key2", () => {
-		clock.tick(65 * 1000);
+		clock.advance(65 * 1000);
 		return cacher.get(key2).then(obj => {
-			expect(obj).toBeNull();
+			expect(obj).toBeUndefined();
 		});
 	});
 });

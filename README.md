@@ -9,7 +9,6 @@
 [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20Moleculer%20Guru-006BFF)](https://gurubase.io/g/moleculer)
 
 [![Downloads](https://img.shields.io/npm/dm/moleculer.svg)](https://www.npmjs.com/package/moleculer)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmoleculerjs%2Fmoleculer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmoleculerjs%2Fmoleculer?ref=badge_shield)
 [![Patreon](docs/assets/patreon.svg)][patreon]
 
 # Moleculer [![NPM version](https://img.shields.io/npm/v/moleculer.svg)](https://www.npmjs.com/package/moleculer) [![Twitter URL](https://img.shields.io/twitter/url/http/shields.io.svg?style=social&logo=twitter)](https://twitter.com/intent/tweet?text=Moleculer%20is%20a%20modern%20microservices%20framework%20for%20Node.js&url=https://github.com/moleculerjs/moleculer&via=MoleculerJS&hashtags=nodejs,javascript,microservices)
@@ -45,12 +44,12 @@ Moleculer is a fast, modern and powerful microservices framework for [Node.js](h
 - many fault tolerance features (Circuit Breaker, Bulkhead, Retry, Timeout, Fallback)
 - plugin/middleware system
 - support versioned services
-- support [Streams](https://nodejs.org/dist/latest-v10.x/docs/api/stream.html)
+- support [Streams](https://nodejs.org/docs/latest/api/stream.html)
 - service mixins
 - built-in caching solution (Memory, MemoryLRU, Redis)
 - pluggable loggers (Console, File, Pino, Bunyan, Winston, Debug, Datadog, Log4js)
-- pluggable transporters (TCP, NATS, MQTT, Redis, NATS Streaming, Kafka, AMQP 0.9, AMQP 1.0)
-- pluggable serializers (JSON, Avro, MsgPack, Protocol Buffer, Thrift, CBOR, Notepack)
+- pluggable transporters (TCP, NATS, MQTT, Redis, Kafka, AMQP 0.9, AMQP 1.0)
+- pluggable serializers (JSON, JSONExt, MsgPack, CBOR, Notepack)
 - pluggable parameter validator
 - multiple services on a node/server
 - master-less architecture, all nodes are equal
@@ -154,10 +153,8 @@ We welcome you to join in the development of Moleculer. Please read our [contrib
 # License
 Moleculer is available under the [MIT license](https://tldrlegal.com/license/mit-license).
 
-[3rd party licenses](https://app.fossa.io/reports/09fc5b4f-d321-4f68-b859-8c61fe3eb6dc)
-
 # Contact
-Copyright (c) 2016-2023 MoleculerJS
+Copyright (c) 2016-2026 MoleculerJS
 
 [![@moleculerjs](https://img.shields.io/badge/github-moleculerjs-green.svg)](https://github.com/moleculerjs) [![@MoleculerJS](https://img.shields.io/badge/twitter-MoleculerJS-blue.svg)](https://twitter.com/MoleculerJS)
 

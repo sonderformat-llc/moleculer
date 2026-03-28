@@ -1,23 +1,32 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
 "use strict";
 
 const util = require("util");
-const { isString } = require("./utils");
-const _ = require("lodash");
+const { pick } = require("lodash");
 const { RequestSkippedError, MaxCallLevelError } = require("./errors");
+
+/**
+ * @typedef {import("./context")} ContextClass
+ * @typedef {import("./service-broker").MCallDefinition} MCallDefinition
+ * @typedef {import("./service-broker").MCallCallingOptions} MCallCallingOptions
+ * @typedef {import("./service-broker")} ServiceBroker Moleculer Service Broker instance
+ * @typedef {import("./service-broker").CallingOptions} CallingOptions Calling Options
+ * @typedef {import("./registry/endpoint")} Endpoint Registry Endpoint
+ * @typedef {import("./registry/endpoint-action")} ActionEndpoint Registry Action Endpoint
+ * @typedef {import("./registry/endpoint-event")} EventEndpoint Registry Event Endpoint
+ * @typedef {import("./tracing/span")} Span Tracing Span
+ */
 
 /**
  * Merge metadata
  *
+ * @param {Context} ctx
  * @param {Object} newMeta
- *
- * @private
- * @memberof Context
  */
 function mergeMeta(ctx, newMeta) {
 	if (newMeta) Object.assign(ctx.meta, newMeta);
@@ -27,22 +36,15 @@ function mergeMeta(ctx, newMeta) {
 /**
  * Context class for action calls
  *
- * @property {String} id - Context ID
- * @property {ServiceBroker} broker - Broker instance
- * @property {Action} action - Action definition
- * @property {String} [nodeID=null] - Node ID
- * @property {String} parentID - Parent Context ID
- * @property {Boolean} tracing - Enable tracing
- * @property {Number} [level=1] - Level of context
- *
  * @class Context
+ * @implements {ContextClass}
  */
 class Context {
 	/**
 	 * Creates an instance of Context.
 	 *
 	 * @param {ServiceBroker} broker - Broker instance
-	 * @param {Endpoint} endpoint
+	 * @param {ActionEndpoint|EventEndpoint=} endpoint
 	 *
 	 * @memberof Context
 	 */
@@ -71,6 +73,7 @@ class Context {
 		// The groups of event
 		this.eventGroups = null;
 
+		/** @type {CallingOptions} */
 		this.options = {
 			timeout: null,
 			retries: null
@@ -83,7 +86,11 @@ class Context {
 
 		this.params = null;
 		this.meta = {};
+		this.headers = {};
+		this.responseHeaders = {};
 		this.locals = {};
+
+		this.stream = null;
 
 		this.requestID = this.id;
 
@@ -94,12 +101,8 @@ class Context {
 		this.needAck = null;
 		this.ackID = null;
 
-		//this.startTime = null;
-		//his.startHrTime = null;
-		//this.stopTime = null;
-		//this.duration = null;
+		this.startHrTime = null;
 
-		//this.error = null;
 		this.cachedResult = false;
 	}
 
@@ -107,9 +110,9 @@ class Context {
 	 * Create a new Context instance
 	 *
 	 * @param {ServiceBroker} broker
-	 * @param {Endpoint} endpoint
+	 * @param {ActionEndpoint|EventEndpoint} endpoint
 	 * @param {Object?} params
-	 * @param {Object} opts
+	 * @param {CallingOptions} opts
 	 * @returns {Context}
 	 *
 	 * @static
@@ -139,6 +142,11 @@ class Context {
 			ctx.meta = Object.assign({}, opts.parentCtx.meta || {}, opts.meta || {});
 		else if (opts.meta != null) ctx.meta = opts.meta;
 
+		// Headers
+		if (opts.headers) {
+			ctx.headers = opts.headers;
+		}
+
 		// ParentID, Level, Caller, Tracing
 		if (opts.parentCtx != null) {
 			ctx.tracing = opts.parentCtx.tracing;
@@ -163,20 +171,25 @@ class Context {
 		}
 
 		// Event acknowledgement
-		if (opts.needAck) {
-			ctx.needAck = opts.needAck;
-		}
+		// if (opts.needAck) {
+		// 	ctx.needAck = opts.needAck;
+		// }
 
 		return ctx;
 	}
 
 	/**
 	 * Copy itself without ID.
-	 * @param {Endpoint} ep
+	 *
+	 * @param {ActionEndpoint|EventEndpoint} ep
 	 * @returns {Context}
 	 */
 	copy(ep) {
-		const newCtx = new this.constructor(this.broker);
+		/** @type {any} */
+		const ctor = this.constructor;
+
+		/** @type {Context} */
+		const newCtx = new ctor(this.broker);
 
 		newCtx.nodeID = this.nodeID;
 		newCtx.setEndpoint(ep || this.endpoint);
@@ -186,6 +199,8 @@ class Context {
 		newCtx.level = this.level;
 		newCtx.params = this.params;
 		newCtx.meta = this.meta;
+		newCtx.headers = this.headers;
+		newCtx.responseHeaders = this.responseHeaders;
 		newCtx.locals = this.locals;
 		newCtx.requestID = this.requestID;
 		newCtx.tracing = this.tracing;
@@ -195,6 +210,7 @@ class Context {
 		newCtx.eventName = this.eventName;
 		newCtx.eventType = this.eventType;
 		newCtx.eventGroups = this.eventGroups;
+		newCtx.stream = this.stream;
 
 		newCtx.cachedResult = this.cachedResult;
 
@@ -202,20 +218,40 @@ class Context {
 	}
 
 	/**
+	 *
+	 * @param {ActionEndpoint|EventEndpoint} ep
+	 * @returns {ep is ActionEndpoint}
+	 */
+	isActionEndpoint(ep) {
+		// @ts-ignore
+		return ep?.action != null;
+	}
+
+	/**
+	 *
+	 * @param {ActionEndpoint|EventEndpoint} ep
+	 * @returns {ep is EventEndpoint}
+	 */
+	isEventEndpoint(ep) {
+		// @ts-ignore
+		return ep?.event != null;
+	}
+
+	/**
 	 * Set endpoint of context
 	 *
-	 * @param {Endpoint} endpoint
+	 * @param {ActionEndpoint|EventEndpoint} endpoint
 	 * @memberof Context
 	 */
 	setEndpoint(endpoint) {
 		this.endpoint = endpoint;
 		if (endpoint) {
 			this.nodeID = endpoint.id;
-			if (endpoint.action) {
+			if (this.isActionEndpoint(endpoint)) {
 				this.action = endpoint.action;
 				this.service = this.action.service;
 				this.event = null;
-			} else if (endpoint.event) {
+			} else if (this.isEventEndpoint(endpoint)) {
 				this.event = endpoint.event;
 				this.service = this.event.service;
 				this.action = null;
@@ -232,7 +268,7 @@ class Context {
 	 * @memberof Context
 	 */
 	setParams(newParams, cloning = false) {
-		if (cloning && newParams) this.params = Object.assign({}, newParams);
+		if (cloning && newParams) this.params = structuredClone(newParams);
 		else this.params = newParams;
 	}
 
@@ -240,8 +276,8 @@ class Context {
 	 * Call an other action. It creates a sub-context.
 	 *
 	 * @param {String} actionName
-	 * @param {Object?} params
-	 * @param {Object?} opts
+	 * @param {Object=} params
+	 * @param {Object=} _opts
 	 * @returns {Promise}
 	 *
 	 * @example <caption>Call an other service with params & options</caption>
@@ -299,6 +335,26 @@ class Context {
 			});
 	}
 
+	/**
+	 * @overload
+	 * @param {Record<string, MCallDefinition>} def
+	 * @param {MCallCallingOptions=} _opts
+	 * @returns {Promise<Record<string, TResult>>}
+	 */
+	/**
+	 * @overload
+	 * @param {MCallDefinition[]} def
+	 * @param {MCallCallingOptions=} _opts
+	 * @returns {Promise<TResult[]>}
+	 */
+	/**
+	 * Multiple action calls.
+	 *
+	 * @template TResult
+	 * @param {Record<string, MCallDefinition>|MCallDefinition[]} def
+	 * @param {MCallCallingOptions=} _opts
+	 * @returns {Promise<Record<string, TResult> | TResult[]>}
+	 */
 	mcall(def, _opts) {
 		const opts = Object.assign(
 			{
@@ -336,7 +392,7 @@ class Context {
 			);
 		}
 
-		let p = this.broker.mcall(def, opts);
+		let p = this.broker.mcall(/** @type {MCallDefinition[]} */ (def), opts);
 
 		// Merge metadata with sub context metadata
 		return p
@@ -358,8 +414,8 @@ class Context {
 	 * Emit an event (grouped & balanced global event)
 	 *
 	 * @param {string} eventName
-	 * @param {any?} payload
-	 * @param {Object?} opts
+	 * @param {any=} data
+	 * @param {Object=} opts
 	 * @returns {Promise}
 	 *
 	 * @example
@@ -368,12 +424,11 @@ class Context {
 	 * @memberof Context
 	 */
 	emit(eventName, data, opts) {
-		if (Array.isArray(opts) || isString(opts)) opts = { groups: opts };
-		else if (opts == null) opts = {};
+		opts = opts ?? {};
+		opts.parentCtx = this;
 
 		if (opts.groups && !Array.isArray(opts.groups)) opts.groups = [opts.groups];
 
-		opts.parentCtx = this;
 		return this.broker.emit(eventName, data, opts);
 	}
 
@@ -381,8 +436,8 @@ class Context {
 	 * Emit an event for all local & remote services
 	 *
 	 * @param {string} eventName
-	 * @param {any?} payload
-	 * @param {Object?} opts
+	 * @param {any=} data
+	 * @param {Object=} opts
 	 * @returns {Promise}
 	 *
 	 * @example
@@ -391,12 +446,11 @@ class Context {
 	 * @memberof Context
 	 */
 	broadcast(eventName, data, opts) {
-		if (Array.isArray(opts) || isString(opts)) opts = { groups: opts };
-		else if (opts == null) opts = {};
+		opts = opts ?? {};
+		opts.parentCtx = this;
 
 		if (opts.groups && !Array.isArray(opts.groups)) opts.groups = [opts.groups];
 
-		opts.parentCtx = this;
 		return this.broker.broadcast(eventName, data, opts);
 	}
 
@@ -404,7 +458,7 @@ class Context {
 	 * Start a new child tracing span.
 	 *
 	 * @param {String} name
-	 * @param {Object?} opts
+	 * @param {Object=} opts
 	 * @returns {Span}
 	 * @memberof Context
 	 */
@@ -426,7 +480,7 @@ class Context {
 	 * Finish an active span.
 	 *
 	 * @param {Span} span
-	 * @param {Number?} time
+	 * @param {Number=} time
 	 */
 	finishSpan(span, time) {
 		if (!span.isActive()) return;
@@ -447,7 +501,7 @@ class Context {
 	 * Convert Context to a printable POJO object.
 	 */
 	toJSON() {
-		const res = _.pick(this, [
+		const res = pick(this, [
 			"id",
 			"nodeID",
 			"action.name",
@@ -461,6 +515,8 @@ class Context {
 			"level",
 			"params",
 			"meta",
+			"headers",
+			"responseHeaders",
 			//"locals",
 			"requestID",
 			"tracing",

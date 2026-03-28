@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -15,7 +15,6 @@ const Exporters = {
 	Datadog: require("./datadog"),
 	//DatadogSimple: require("./datadog-simple"),
 	Event: require("./event"),
-	EventLegacy: require("./event-legacy"),
 	Jaeger: require("./jaeger"),
 	Zipkin: require("./zipkin"),
 	NewRelic: require("./newrelic")
@@ -32,8 +31,8 @@ function getByName(name) {
 /**
  * Resolve exporter by name
  *
- * @param {object|string} opt
- * @returns {Exporters.Base}
+ * @param {Record<string,any>|string} opt
+ * @returns {any}
  * @memberof ServiceBroker
  */
 function resolve(opt) {

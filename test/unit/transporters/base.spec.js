@@ -281,7 +281,7 @@ describe("Test BaseTransporter", () => {
 			});
 
 			it("check with PACKET_EVENT without target", () => {
-				let packet = new P.Packet(P.PACKET_EVENT, null, "user.created");
+				let packet = new P.Packet(P.PACKET_EVENT, null, { event: "user.created" });
 				return transporter
 					.prepublish(packet)
 					.catch(protectReject)
@@ -573,7 +573,7 @@ describe("Test BaseTransporter", () => {
 			expect(transporter.serialize(packet)).toBe("serialized");
 			expect(broker.serializer.serialize).toHaveBeenCalledTimes(1);
 			expect(broker.serializer.serialize).toHaveBeenCalledWith(
-				{ sender: "server1", ver: "4" },
+				{ sender: "server1", ver: "5" },
 				P.PACKET_EVENT
 			);
 		});

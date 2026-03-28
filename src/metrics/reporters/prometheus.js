@@ -15,6 +15,19 @@ const METRIC = require("../constants");
 const { isFunction } = require("../../utils");
 
 /**
+ * Import types
+ *
+ * @typedef {import("../registry")} MetricRegistry
+ * @typedef {import("./prometheus").PrometheusReporterOptions} PrometheusReporterOptions
+ * @typedef {import("./prometheus")} PrometheusReporterClass
+ * @typedef {import("../types/base").BaseMetricPOJO} BaseMetricPOJO
+ * @typedef {import("../types/base")} BaseMetric
+ * @typedef {import("http").Server} Server
+ * @typedef {import("http").IncomingMessage} IncomingMessage
+ * @typedef {import("http").ServerResponse} ServerResponse
+ */
+
+/**
  * Prometheus reporter for Moleculer.
  *
  * 		https://prometheus.io/
@@ -32,21 +45,26 @@ const { isFunction } = require("../../utils");
  *
  *  Start containers:
  *
- * 		docker-compose up -d
+ * 		docker compose up -d
  *
  * Grafana dashboard: http://<docker-ip>:3000
  *
+ * @class DatadogReporter
+ * @extends {BaseReporter}
+ * @implements {PrometheusReporterClass}
  */
 class PrometheusReporter extends BaseReporter {
 	/**
 	 * Constructor of PrometheusReporters
-	 * @param {Object} opts
+	 * @param {PrometheusReporterOptions} opts
 	 * @memberof PrometheusReporter
 	 */
 	constructor(opts) {
 		super(opts);
 
+		/** @type {PrometheusReporterOptions} */
 		this.opts = _.defaultsDeep(this.opts, {
+			host: null,
 			port: 3030,
 			path: "/metrics",
 			defaultLabels: registry => ({
@@ -78,14 +96,14 @@ class PrometheusReporter extends BaseReporter {
 			if (err) {
 				/* istanbul ignore next */
 				return this.registry.broker.fatal(
+					err.message,
 					new MoleculerError("Prometheus metric reporter listening error: " + err.message)
 				);
 			}
 
+			const addr = /** @type import("net").AddressInfo */ (this.server.address());
 			this.logger.info(
-				`Prometheus metric reporter listening on http://${this.server.address().address}:${
-					this.server.address().port
-				}${this.opts.path} address.`
+				`Prometheus metric reporter listening on http://${addr.address}:${addr.port}${this.opts.path} address.`
 			);
 		});
 		this.defaultLabels = isFunction(this.opts.defaultLabels)
@@ -133,7 +151,7 @@ class PrometheusReporter extends BaseReporter {
 					zlib.gzip(content, (err, buffer) => {
 						/* istanbul ignore next */
 						if (err) {
-							this.logger("Unable to compress response: " + err.message);
+							this.logger.error("Unable to compress response: " + err.message);
 							res.writeHead(500);
 							res.end(err.message);
 						} else {
@@ -179,7 +197,7 @@ class PrometheusReporter extends BaseReporter {
 			const metricType = metric.type;
 
 			const snapshot = metric.snapshot();
-			if (snapshot.length == 0) return;
+			if (snapshot.length === 0) return;
 
 			switch (metric.type) {
 				case METRIC.TYPE_COUNTER:
@@ -285,7 +303,7 @@ class PrometheusReporter extends BaseReporter {
 			extraLabels || {}
 		);
 		const keys = Object.keys(labels);
-		if (keys.length == 0) return "";
+		if (keys.length === 0) return "";
 
 		return (
 			"{" +

@@ -1,28 +1,39 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
 "use strict";
 
 const _ = require("lodash");
-const utils = require("../utils");
+const { isObject } = require("../utils");
+const utilsMatch = require("../utils").match;
 const BaseCacher = require("./base");
-const LRU = require("lru-cache");
+const { LRUCache } = require("lru-cache");
 const { METRIC } = require("../metrics");
 
 const Lock = require("../lock");
+
+/**
+ * Import types
+ *
+ * @typedef {import("../service-broker")} ServiceBroker
+ * @typedef {import("./memory-lru")} MemoryLRUCacherClass
+ * @typedef {import("./memory-lru").MemoryLRUCacherOptions} MemoryLRUCacherOptions
+ */
+
 /**
  * Cacher factory for memory cache
  *
- * @class MemoryLRUCacher
+ * @implements {MemoryLRUCacherClass}
+ * @extends {BaseCacher<MemoryLRUCacherOptions>}
  */
 class MemoryLRUCacher extends BaseCacher {
 	/**
 	 * Creates an instance of MemoryLRUCacher.
 	 *
-	 * @param {object} opts
+	 * @param {MemoryLRUCacherOptions?} opts
 	 *
 	 * @memberof MemoryLRUCacher
 	 */
@@ -30,11 +41,12 @@ class MemoryLRUCacher extends BaseCacher {
 		super(opts);
 
 		// Cache container
-		this.cache = new LRU({
-			max: this.opts.max,
-			maxAge: this.opts.ttl ? this.opts.ttl * 1000 : null,
+		this.cache = new LRUCache({
+			max: this.opts.max ? this.opts.max : 1000,
+			ttl: this.opts.ttl ? this.opts.ttl * 1000 : undefined,
 			updateAgeOnGet: !!this.opts.ttl
 		});
+
 		// Async lock
 		this._lock = new Lock();
 		// Start TTL timer
@@ -51,7 +63,7 @@ class MemoryLRUCacher extends BaseCacher {
 	/**
 	 * Initialize cacher
 	 *
-	 * @param {any} broker
+	 * @param {ServiceBroker} broker
 	 *
 	 * @memberof MemoryLRUCacher
 	 */
@@ -64,7 +76,12 @@ class MemoryLRUCacher extends BaseCacher {
 			// Clear all entries after transporter connected. Maybe we missed some "cache.clear" events.
 			return this.clean();
 		});
-		if (this.opts.lock && this.opts.lock.enabled !== false && this.opts.lock.staleTime) {
+
+		if (
+			isObject(this.opts.lock) &&
+			this.opts.lock?.enabled !== false &&
+			this.opts.lock.staleTime
+		) {
 			/* istanbul ignore next */
 			this.logger.warn("setting lock.staleTime with MemoryLRUCacher is not supported.");
 		}
@@ -105,7 +122,7 @@ class MemoryLRUCacher extends BaseCacher {
 		} else {
 			timeEnd();
 		}
-		return this.broker.Promise.resolve(null);
+		return this.broker.Promise.resolve(this.opts.missingResponse);
 	}
 
 	/**
@@ -126,7 +143,7 @@ class MemoryLRUCacher extends BaseCacher {
 
 		data = this.clone ? this.clone(data) : data;
 
-		this.cache.set(key, data, ttl ? ttl * 1000 : null);
+		this.cache.set(key, data, { ttl: ttl ? ttl * 1000 : 0 });
 
 		timeEnd();
 		this.logger.debug(`SET ${key}`);
@@ -142,13 +159,13 @@ class MemoryLRUCacher extends BaseCacher {
 	 *
 	 * @memberof MemoryLRUCacher
 	 */
-	del(keys) {
+	del(key) {
 		this.metrics.increment(METRIC.MOLECULER_CACHER_DEL_TOTAL);
 		const timeEnd = this.metrics.timer(METRIC.MOLECULER_CACHER_DEL_TIME);
 
-		keys = Array.isArray(keys) ? keys : [keys];
+		const keys = Array.isArray(key) ? key : [key];
 		keys.forEach(key => {
-			this.cache.del(key);
+			this.cache.delete(key);
 			this.logger.debug(`REMOVE ${key}`);
 		});
 		timeEnd();
@@ -170,12 +187,16 @@ class MemoryLRUCacher extends BaseCacher {
 		const matches = Array.isArray(match) ? match : [match];
 		this.logger.debug(`CLEAN ${matches.join(", ")}`);
 
-		this.cache.keys().forEach(key => {
-			if (matches.some(match => utils.match(key, match))) {
-				this.logger.debug(`REMOVE ${key}`);
-				this.cache.del(key);
+		const keys = this.cache.keys();
+		/** @type {any} */
+		let key = keys.next();
+		while (!key.done) {
+			if (matches.some(m => utilsMatch(key.value, m))) {
+				this.logger.debug(`REMOVE ${key.value}`);
+				this.cache.delete(key.value);
 			}
-		});
+			key = keys.next();
+		}
 		timeEnd();
 
 		return this.broker.Promise.resolve();
@@ -235,7 +256,7 @@ class MemoryLRUCacher extends BaseCacher {
 	 * @memberof MemoryLRUCacher
 	 */
 	checkTTL() {
-		this.cache.prune();
+		this.cache.purgeStale();
 	}
 
 	/**
@@ -244,13 +265,16 @@ class MemoryLRUCacher extends BaseCacher {
 	 * @returns Promise<Array<Object>>
 	 */
 	getCacheKeys() {
-		return Promise.resolve(
-			this.cache.keys().map(key => {
-				return {
-					key
-				};
-			})
-		);
+		const res = [];
+
+		const keys = this.cache.keys();
+		let key = keys.next();
+		while (!key.done) {
+			res.push({ key: key.value });
+			key = keys.next();
+		}
+
+		return Promise.resolve(res);
 	}
 }
 

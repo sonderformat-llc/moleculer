@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -18,9 +18,18 @@ const C = require("../../constants");
 let ETCD3;
 
 /**
+ * Import types
+ *
+ * @typedef {import("./etcd3")} Etcd3DiscovererClass
+ * @typedef {import("./etcd3").Etcd3DiscovererOptions} Etcd3DiscovererOptions
+ * @typedef {import("../node")} Node
+ */
+
+/**
  * etcd3-based Discoverer class
  *
  * @class Etcd3Discoverer
+ * @implements {Etcd3DiscovererClass}
  */
 class Etcd3Discoverer extends BaseDiscoverer {
 	/**
@@ -29,6 +38,7 @@ class Etcd3Discoverer extends BaseDiscoverer {
 	 * TODO:
 	 * 	- the etcd3 lib has no reconnection logic
 	 *
+	 * @param {Etcd3DiscovererOptions|string} opts
 	 * @memberof Etcd3Discoverer
 	 */
 	constructor(opts) {
@@ -216,7 +226,7 @@ class Etcd3Discoverer extends BaseDiscoverer {
 		// Collect the online node keys.
 		return this.Promise.resolve()
 			.then(() => {
-				if (this.opts.fullCheck && ++this.idx % this.opts.fullCheck == 0) {
+				if (this.opts.fullCheck && ++this.idx % this.opts.fullCheck === 0) {
 					// Full check
 					//this.logger.debug("Full check", this.idx);
 					this.idx = 0;
@@ -281,6 +291,7 @@ class Etcd3Discoverer extends BaseDiscoverer {
 	 * Discover a new or old node.
 	 *
 	 * @param {String} nodeID
+	 * @returns {Promise<Node | void>}
 	 */
 	discoverNode(nodeID) {
 		return this.client
@@ -302,6 +313,7 @@ class Etcd3Discoverer extends BaseDiscoverer {
 
 	/**
 	 * Discover all nodes (after connected)
+	 * @returns {Promise<Node[] | void>}
 	 */
 	discoverAllNodes() {
 		return this.collectOnlineNodes();
@@ -309,7 +321,8 @@ class Etcd3Discoverer extends BaseDiscoverer {
 
 	/**
 	 * Local service registry has been changed. We should notify remote nodes.
-	 * @param {String} nodeID
+	 * @param {String=} nodeID
+	 * @returns {Promise<void>}
 	 */
 	sendLocalNodeInfo(nodeID) {
 		const info = this.broker.getLocalNodeInfo();

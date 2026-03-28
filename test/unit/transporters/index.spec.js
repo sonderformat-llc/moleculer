@@ -119,18 +119,16 @@ describe("Test Transporter resolver", () => {
 		});
 
 		it("should resolve KafkaTransporter from connection string", () => {
-			let trans = Transporters.resolve("kafka://localhost:2181");
+			let trans = Transporters.resolve("kafka://localhost:9093");
 			expect(trans).toBeInstanceOf(Transporters.Kafka);
 			expect(trans.opts).toEqual({
-				host: "localhost:2181",
-				client: {
-					kafkaHost: "localhost:2181"
-				},
-				consumer: {},
-				customPartitioner: undefined,
+				clientId: "moleculer-kafka",
+				bootstrapBrokers: ["localhost:9093"],
 				producer: {},
-				publish: {
-					attributes: 0,
+				consumer: {},
+				admin: {},
+				publish: {},
+				publishMessage: {
 					partition: 0
 				}
 			});
@@ -138,48 +136,23 @@ describe("Test Transporter resolver", () => {
 
 		it("should resolve KafkaTransporter from obj", () => {
 			let options = {
-				host: "localhost:2181",
-				publish: {
+				bootstrapBrokers: ["localhost:9093"],
+				publishMessage: {
 					partition: 2
 				}
 			};
 			let trans = Transporters.resolve({ type: "Kafka", options });
 			expect(trans).toBeInstanceOf(Transporters.Kafka);
 			expect(trans.opts).toEqual({
-				host: "localhost:2181",
-				client: {
-					kafkaHost: "localhost:2181"
-				},
-				consumer: {},
-				customPartitioner: undefined,
+				clientId: "moleculer-kafka",
+				bootstrapBrokers: ["localhost:9093"],
 				producer: {},
-				publish: {
-					attributes: 0,
+				consumer: {},
+				admin: {},
+				publish: {},
+				publishMessage: {
 					partition: 2
 				}
-			});
-		});
-	});
-
-	describe("Resolve NATS Streaming transporter", () => {
-		it("should resolve NatsStreamingTransporter from connection string", () => {
-			let trans = Transporters.resolve("stan://localhost:4222");
-			expect(trans).toBeInstanceOf(Transporters.STAN);
-		});
-
-		it("should resolve NatsStreamingTransporter from string", () => {
-			let trans = Transporters.resolve("STAN");
-			expect(trans).toBeInstanceOf(Transporters.STAN);
-		});
-
-		it("should resolve NatsStreamingTransporter from obj without type", () => {
-			let options = { url: "stan://localhost:4222" };
-			let trans = Transporters.resolve({ type: "STAN", options });
-			expect(trans).toBeInstanceOf(Transporters.STAN);
-			expect(trans.opts).toEqual({
-				clusterID: "test-cluster",
-				preserveBuffers: true,
-				url: "stan://localhost:4222"
 			});
 		});
 	});

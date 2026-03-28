@@ -1,17 +1,28 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
+
+/* eslint-disable no-unused-vars */
 
 "use strict";
 
 const _ = require("lodash");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./base")} BaseDiscovererClass
+ * @typedef {import("../registry")} ServiceRegistry
+ * @typedef {import("../node")} Node
+ */
+
+/**
  * Abstract Discoverer class
  *
  * @class BaseDiscoverer
+ * @implements {BaseDiscovererClass}
  */
 class BaseDiscoverer {
 	/**
@@ -250,14 +261,16 @@ class BaseDiscoverer {
 	 * Discover a new or old node by nodeID
 	 *
 	 * @param {String} nodeID
+	 * @returns {Promise<Node | void>}
 	 */
-	discoverNode() {
+	discoverNode(nodeID) {
 		/* istanbul ignore next */
 		throw new Error("Not implemented");
 	}
 
 	/**
 	 * Discover all nodes (after connected)
+	 * @returns {Promise<Node[] | void>}
 	 */
 	discoverAllNodes() {
 		/* istanbul ignore next */
@@ -267,9 +280,10 @@ class BaseDiscoverer {
 	/**
 	 * Local service registry has been changed. We should notify remote nodes.
 	 *
-	 * @param {String} nodeID
+	 * @param {String=} nodeID
+	 * @returns {Promise<void>}
 	 */
-	sendLocalNodeInfo() {
+	sendLocalNodeInfo(nodeID) {
 		/* istanbul ignore next */
 		throw new Error("Not implemented");
 	}

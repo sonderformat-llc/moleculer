@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -11,58 +11,72 @@ const Transporter = require("./base");
 const C = require("../constants");
 
 /**
- * Lightweight transporter for Kafka
+ * Import types
  *
- * For test:
- *   1. clone https://github.com/wurstmeister/kafka-docker.git repo
- *   2. follow instructions on https://github.com/wurstmeister/kafka-docker#pre-requisites
- * 	 3. start containers with Docker Compose
- *
- * 			docker-compose -f docker-compose-single-broker.yml up -d
+ * @typedef {import("./kafka")} KafkaTransporterClass
+ * @typedef {import("./kafka").KafkaTransporterOptions} KafkaTransporterOptions
+ */
+
+/**
+ * Transporter for Kafka
  *
  * @class KafkaTransporter
  * @extends {Transporter}
+ * @implements {KafkaTransporterClass}
  */
 class KafkaTransporter extends Transporter {
 	/**
 	 * Creates an instance of KafkaTransporter.
 	 *
-	 * @param {any} opts
+	 * @param {string|KafkaTransporterOptions?} opts
 	 *
 	 * @memberof KafkaTransporter
 	 */
 	constructor(opts) {
 		if (typeof opts === "string") {
-			opts = { host: opts.replace("kafka://", "") };
+			opts = { bootstrapBrokers: [opts.replace("kafka://", "")] };
 		} else if (opts == null) {
 			opts = {};
 		}
 
-		opts = defaultsDeep(opts, {
-			// KafkaClient options. More info: https://github.com/SOHU-Co/kafka-node#options
-			client: {
-				kafkaHost: opts.host
-			},
+		opts = /** @type {KafkaTransporterOptions} */ (
+			defaultsDeep(opts, {
+				// Client ID for all clients
+				clientId: "moleculer-kafka",
 
-			// KafkaProducer options. More info: https://github.com/SOHU-Co/kafka-node#producerclient-options-custompartitioner
-			producer: {},
-			customPartitioner: undefined,
+				// Bootstrap brokers for connection
+				bootstrapBrokers: null,
 
-			// ConsumerGroup options. More info: https://github.com/SOHU-Co/kafka-node#consumergroupoptions-topics
-			consumer: {},
+				// Producer options
+				producer: {},
 
-			// Advanced options for `send`. More info: https://github.com/SOHU-Co/kafka-node#sendpayloads-cb
-			publish: {
-				partition: 0,
-				attributes: 0
-			}
-		});
+				// Consumer options
+				consumer: {},
+
+				// Admin options
+				admin: {},
+
+				// Publish options
+				publish: {},
+
+				// Message options for send
+				publishMessage: {
+					partition: 0
+				}
+			})
+		);
+
+		// Normalize bootstrapBrokers to array
+		if (opts.bootstrapBrokers && !Array.isArray(opts.bootstrapBrokers)) {
+			opts.bootstrapBrokers = [opts.bootstrapBrokers];
+		}
 
 		super(opts);
 
-		this.client = null;
 		this.producer = null;
 		this.consumer = null;
+		this.consumerStream = null;
+		this.admin = null;
 	}
 
 	/**
@@ -70,68 +84,54 @@ class KafkaTransporter extends Transporter {
 	 *
 	 * @memberof KafkaTransporter
 	 */
-	connect() {
-		return new this.broker.Promise((resolve, reject) => {
-			let Kafka;
-			try {
-				Kafka = require("kafka-node");
-			} catch (err) {
-				/* istanbul ignore next */
-				this.broker.fatal(
-					"The 'kafka-node' package is missing. Please install it with 'npm install kafka-node --save' command.",
-					err,
-					true
-				);
-			}
-
-			this.client = new Kafka.KafkaClient(this.opts.client);
-
-			// Create Producer
-			this.producer = new Kafka.Producer(
-				this.client,
-				this.opts.producer,
-				this.opts.customPartitioner
-			);
-			this.producer.on("ready", () => {
-				/* Moved to ConsumerGroup
-				// Create Consumer
-
-				this.consumer = new Kafka.Consumer(this.client, this.opts.consumerPayloads || [], this.opts.consumer);
-
-				this.consumer.on("error", e => {
-					this.logger.error("Kafka Consumer error", e.message);
-					this.logger.debug(e);
-
-					if (!this.connected)
-						reject(e);
-				});
-
-				this.consumer.on("message", message => {
-					const topic = message.topic;
-					const cmd = topic.split(".")[1];
-					console.log(cmd);
-					this.incomingMessage(cmd, message.value);
-				});*/
-
-				this.logger.info("Kafka client is connected.");
-
-				this.onConnected().then(resolve);
-			});
-
+	async connect() {
+		let Producer, Admin;
+		try {
+			const kafka = require("@platformatic/kafka");
+			Producer = kafka.Producer;
+			Admin = kafka.Admin;
+		} catch (err) {
 			/* istanbul ignore next */
-			this.producer.on("error", e => {
-				this.logger.error("Kafka Producer error", e.message);
-				this.logger.debug(e);
+			this.broker.fatal(
+				"The '@platformatic/kafka' package is missing. Please install it with 'npm install @platformatic/kafka --save' command.",
+				err,
+				true
+			);
+		}
 
-				this.broker.broadcastLocal("$transporter.error", {
-					error: e,
-					module: "transporter",
-					type: C.FAILED_PUBLISHER_ERROR
-				});
-
-				if (!this.connected) reject(e);
-			});
+		// Create Producer
+		this.producer = new Producer({
+			clientId: this.opts.clientId,
+			bootstrapBrokers: this.opts.bootstrapBrokers,
+			autocreateTopics: true,
+			...this.opts.producer
 		});
+
+		// Create Admin
+		this.admin = new Admin({
+			clientId: this.opts.clientId,
+			bootstrapBrokers: this.opts.bootstrapBrokers,
+			...this.opts.admin
+		});
+
+		try {
+			// Validate connection by fetching metadata from the broker
+			await this.admin.listTopics();
+
+			this.logger.info("Kafka client is connected.");
+			await this.onConnected();
+		} catch (err) {
+			this.logger.error("Kafka Producer error", err.message);
+			this.logger.debug(err);
+
+			this.broker.broadcastLocal("$transporter.error", {
+				error: err,
+				module: "transporter",
+				type: C.FAILED_PUBLISHER_ERROR
+			});
+
+			throw err;
+		}
 	}
 
 	/**
@@ -139,18 +139,22 @@ class KafkaTransporter extends Transporter {
 	 *
 	 * @memberof KafkaTransporter
 	 */
-	disconnect() {
-		if (this.client) {
-			this.client.close(() => {
-				this.client = null;
-				this.producer = null;
-
-				if (this.consumer) {
-					this.consumer.close(() => {
-						this.consumer = null;
-					});
-				}
-			});
+	async disconnect() {
+		if (this.consumerStream) {
+			await this.consumerStream.close();
+			this.consumerStream = null;
+		}
+		if (this.admin) {
+			await this.admin.close();
+			this.admin = null;
+		}
+		if (this.producer) {
+			await this.producer.close();
+			this.producer = null;
+		}
+		if (this.consumer) {
+			await this.consumer.close();
+			this.consumer = null;
 		}
 	}
 
@@ -161,96 +165,89 @@ class KafkaTransporter extends Transporter {
 	 *
 	 * @memberof BaseTransporter
 	 */
-	makeSubscriptions(topics) {
-		topics = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
+	async makeSubscriptions(topics) {
+		// Create topics
+		const topicNames = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
 
-		return new this.broker.Promise((resolve, reject) => {
-			this.producer.createTopics(topics, true, err => {
-				/* istanbul ignore next */
-				if (err) {
-					this.logger.error("Unable to create topics!", topics, err);
+		try {
+			// Get list of existing topics
+			const existingTopics = await this.admin.listTopics();
 
-					this.broker.broadcastLocal("$transporter.error", {
-						error: err,
-						module: "transporter",
-						type: C.FAILED_TOPIC_CREATION
-					});
+			// Filter out topics that already exist
+			const topicsToCreate = topicNames.filter(topic => !existingTopics.includes(topic));
 
-					return reject(err);
-				}
-
-				const consumerOptions = Object.assign(
-					{
-						id: "default-kafka-consumer",
-						kafkaHost: this.opts.host,
-						groupId: this.broker.instanceID, //this.nodeID,
-						fromOffset: "latest",
-						encoding: "buffer"
-					},
-					this.opts.consumer
+			if (topicsToCreate.length > 0) {
+				this.logger.debug(
+					`Creating ${topicsToCreate.length} new topics...`,
+					topicsToCreate
 				);
-
-				const Kafka = require("kafka-node");
-				this.consumer = new Kafka.ConsumerGroup(consumerOptions, topics);
-
-				/* istanbul ignore next */
-				this.consumer.on("error", e => {
-					this.logger.error("Kafka Consumer error", e.message);
-					this.logger.debug(e);
-
-					this.broker.broadcastLocal("$transporter.error", {
-						error: e,
-						module: "transporter",
-						type: C.FAILED_CONSUMER_ERROR
-					});
-
-					if (!this.connected) reject(e);
+				await this.admin.createTopics({
+					topics: topicsToCreate
 				});
+			} else {
+				this.logger.debug("All topics already exist, skipping creation.");
+			}
+		} catch (err) {
+			this.logger.error("Unable to create topics!", topicNames, err);
 
-				this.consumer.on("message", message => {
-					const topic = message.topic;
-					const cmd = topic.split(".")[1];
-					this.receive(cmd, message.value);
-				});
+			this.broker.broadcastLocal("$transporter.error", {
+				error: err,
+				module: "transporter",
+				type: C.FAILED_TOPIC_CREATION
+			});
+			throw err;
+		}
 
-				this.consumer.on("connect", () => {
-					resolve();
+		// Create Consumer
+		try {
+			const Consumer = require("@platformatic/kafka").Consumer;
+
+			const consumerOptions = {
+				clientId: this.opts.clientId,
+				bootstrapBrokers: this.opts.bootstrapBrokers,
+				groupId: this.broker.instanceID,
+				...this.opts.consumer
+			};
+
+			this.consumer = new Consumer(consumerOptions);
+
+			this.consumerStream = await this.consumer.consume({
+				topics: topicNames,
+				autocommit: true
+			});
+
+			// Handle messages from the stream
+			this.consumerStream.on("data", async message => {
+				const topic = message.topic;
+				const cmd = topic.split(".")[1];
+				await this.receive(cmd, message.value);
+			});
+
+			this.consumerStream.on("error", err => {
+				this.logger.error("Kafka Consumer stream error", err.message);
+				this.logger.debug(err);
+
+				this.broker.broadcastLocal("$transporter.error", {
+					error: err,
+					module: "transporter",
+					type: C.FAILED_CONSUMER_ERROR
 				});
 			});
-		});
+
+			this.logger.info("The consumer started successfully.");
+		} catch (err) {
+			this.logger.error("Kafka Consumer error", err.message);
+			this.logger.debug(err);
+
+			this.broker.broadcastLocal("$transporter.error", {
+				error: err,
+				module: "transporter",
+				type: C.FAILED_CONSUMER_ERROR
+			});
+
+			throw err;
+		}
 	}
-
-	/**
-	 * Subscribe to a command
-	 *
-	 * @param {String} cmd
-	 * @param {String} nodeID
-	 *
-	 * @memberof KafkaTransporter
-	 */
-	/*
-	subscribe(cmd, nodeID) {
-		const topic = this.getTopicName(cmd, nodeID);
-		this.topics.push(topic);
-
-		return new this.broker.Promise((resolve, reject) => {
-			this.producer.createTopics([topic], true, (err, data) => {
-				if (err) {
-					this.logger.error("Unable to create topics!", topic, err);
-					return reject(err);
-				}
-
-				this.consumer.addTopics([{ topic, offset: -1 }], (err, added) => {
-					if (err) {
-						this.logger.error("Unable to add topic!", topic, err);
-						return reject(err);
-					}
-
-					resolve();
-				}, false);
-			});
-		});
-	}*/
 
 	/**
 	 * Send data buffer.
@@ -261,37 +258,71 @@ class KafkaTransporter extends Transporter {
 	 *
 	 * @returns {Promise}
 	 */
-	send(topic, data, { packet }) {
+	async send(topic, data, { packet }) {
 		/* istanbul ignore next*/
-		if (!this.client) return this.broker.Promise.resolve();
+		if (!this.producer) return;
 
-		return new this.broker.Promise((resolve, reject) => {
-			this.producer.send(
-				[
+		try {
+			await this.producer.send({
+				messages: [
 					{
 						topic: this.getTopicName(packet.type, packet.target),
-						messages: [data],
-						partition: this.opts.publish.partition,
-						attributes: this.opts.publish.attributes
+						value: data,
+						...this.opts.publishMessage
 					}
 				],
-				err => {
-					/* istanbul ignore next */
-					if (err) {
-						this.logger.error("Publish error", err);
+				...this.opts.publish
+			});
+		} catch (err) {
+			this.logger.error("Kafka Publish error", err);
 
-						this.broker.broadcastLocal("$transporter.error", {
-							error: err,
-							module: "transporter",
-							type: C.FAILED_PUBLISHER_ERROR
-						});
+			this.broker.broadcastLocal("$transporter.error", {
+				error: err,
+				module: "transporter",
+				type: C.FAILED_PUBLISHER_ERROR
+			});
 
-						reject(err);
-					}
-					resolve();
-				}
-			);
-		});
+			throw err;
+		}
+	}
+
+	/**
+	 * Subscribe to a command
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 *
+	 * @memberof BaseTransporter
+	 */
+	subscribe() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
+	}
+
+	/**
+	 * Subscribe to balanced action commands
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 *
+	 * @memberof AmqpTransporter
+	 */
+	subscribeBalancedRequest() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
+	}
+
+	/**
+	 * Subscribe to balanced event command
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 *
+	 * @memberof AmqpTransporter
+	 */
+	subscribeBalancedEvent() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
 	}
 }
 

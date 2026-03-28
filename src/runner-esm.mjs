@@ -8,8 +8,8 @@ import utils from "./utils.js";
 import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
+import { globSync } from "glob";
 import { inspect } from "util";
-import glob from "glob";
 import _ from "lodash";
 import Args from "args";
 import os from "os";
@@ -118,7 +118,7 @@ export default class MoleculerRunner {
 
 				if (this.flags.envfile) dotenv.config({ path: this.flags.envfile });
 				else dotenv.config();
-			} catch (err) {
+			} catch {
 				throw new Error(
 					"The 'dotenv' package is missing! Please install it with 'npm install dotenv --save' command."
 				);
@@ -217,7 +217,7 @@ export default class MoleculerRunner {
 
 		try {
 			return require.resolve(configPath, resolveOptions);
-		} catch (_) {
+		} catch {
 			return null;
 		}
 	}
@@ -262,7 +262,7 @@ export default class MoleculerRunner {
 							level
 								.split("_")
 								.map((value, index) => {
-									if (index == 0) {
+									if (index === 0) {
 										return value;
 									} else {
 										return value[0].toUpperCase() + value.substring(1);
@@ -321,7 +321,7 @@ export default class MoleculerRunner {
 	isDirectory(p) {
 		try {
 			return fs.lstatSync(p).isDirectory();
-		} catch (_) {
+		} catch {
 			// ignore
 		}
 		return false;
@@ -336,7 +336,7 @@ export default class MoleculerRunner {
 	isServiceFile(p) {
 		try {
 			return !fs.lstatSync(p).isDirectory();
-		} catch (_) {
+		} catch {
 			// ignore
 		}
 		return false;
@@ -402,8 +402,8 @@ export default class MoleculerRunner {
 						if (this.config.hotReload) {
 							this.watchFolders.push(svcPath);
 						}
-						files = glob.sync(svcPath + "/" + fileMask, { absolute: true });
-						if (files.length == 0)
+						files = globSync(svcPath + "/" + fileMask, { absolute: true });
+						if (files.length === 0)
 							return this.broker.logger.warn(
 								kleur
 									.yellow()
@@ -415,8 +415,8 @@ export default class MoleculerRunner {
 						files = [svcPath.replace(/\\/g, "/") + ".service.js"];
 					} else {
 						// Load with glob
-						files = glob.sync(p, { cwd: svcDir, absolute: true });
-						if (files.length == 0)
+						files = globSync(p, { cwd: svcDir, absolute: true });
+						if (files.length === 0)
 							this.broker.logger.warn(
 								kleur.yellow().bold(`There is no matched file for pattern: '${p}'`)
 							);

@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -8,7 +8,18 @@
 
 const _ = require("lodash");
 const { ServiceSchemaError, MoleculerError } = require("./errors");
-const { isObject, isFunction, flatten, functionArguments, deprecate, uniq } = require("./utils");
+const { isObject, isFunction, flatten, uniq } = require("./utils");
+
+/**
+ * Import types
+ *
+ * @typedef {import("./service")} ServiceClass
+ * @typedef {import("./service-broker")} ServiceBroker
+ * @typedef {import("./service").ServiceSchema} ServiceSchema
+ * @typedef {import("./service").ServiceDependency} ServiceDependency
+ * @typedef {import("./registry/endpoint-event")} EventEndpoint
+ * @typedef {import("./registry/service-item")} ServiceItem
+ */
 
 /**
  * Wrap a handler Function to an object with a `handler` property.
@@ -29,45 +40,32 @@ function wrapToArray(o) {
 	return Array.isArray(o) ? o : [o];
 }
 
-function isNewSignature(args) {
-	return args.length > 0 && ["ctx", "context"].indexOf(args[0].toLowerCase()) !== -1;
-}
-
 /**
  * Service class
  *
- * @class Service
+ * @implements {ServiceClass}
  */
 class Service {
 	/**
 	 * Creates an instance of Service by schema.
 	 *
 	 * @param {ServiceBroker} 	broker	broker of service
-	 * @param {Object} 			schema	schema of service
-	 * @param {any=} 			schemaMods	Modified schema
+	 * @param {Partial<ServiceSchema>}	schema	schema of service
 	 *
-	 * @memberof Service
 	 */
-	constructor(broker, schema, schemaMods) {
+	constructor(broker, schema) {
 		if (!isObject(broker)) throw new ServiceSchemaError("Must set a ServiceBroker instance!");
 
 		this.broker = broker;
 
 		if (broker) this.Promise = broker.Promise;
-		if (schemaMods) {
-			deprecate(
-				"schemaMods",
-				"Using 'schemaMods' parameter in 'broker.createService' is deprecated. Use 'mixins' instead."
-			);
-			schema = this.mergeSchemas(schema, schemaMods);
-		}
 		if (schema) this.parseServiceSchema(schema);
 	}
 
 	/**
 	 * Parse Service schema & register as local service
 	 *
-	 * @param {Object} schema of Service
+	 * @param {Partial<ServiceSchema>} schema of Service
 	 */
 	parseServiceSchema(schema) {
 		if (!isObject(schema))
@@ -105,7 +103,7 @@ class Service {
 		this.version = schema.version;
 		this.settings = schema.settings || {};
 		this.metadata = schema.metadata || {};
-		this.schema = schema;
+		this.schema = /** @type {ServiceSchema} */ (schema);
 
 		this.fullName = Service.getVersionedFullName(
 			this.name,
@@ -213,10 +211,15 @@ class Service {
 						// Reused context (in case of retry)
 						ctx = opts.ctx;
 					} else {
-						const ep = {
+						const ep = /** @type {EventEndpoint} */ ({
 							id: this.broker.nodeID,
-							event: innerEvent
-						};
+							event: innerEvent,
+							broker: this.broker,
+							service: null,
+							node: null,
+							local: true,
+							state: true
+						});
 						ctx = this.broker.ContextFactory.create(
 							this.broker,
 							ep,
@@ -242,7 +245,7 @@ class Service {
 	/**
 	 * Return a service settings without protected properties.
 	 *
-	 * @param {Object?} settings
+	 * @param {Record<string, any>?} settings
 	 */
 	_getPublicSettings(settings) {
 		if (settings && Array.isArray(settings.$secureSettings)) {
@@ -254,9 +257,6 @@ class Service {
 
 	/**
 	 * Initialize service. It called `created` handler in schema
-	 *
-	 * @private
-	 * @memberof Service
 	 */
 	_init() {
 		this.logger.debug(`Service '${this.fullName}' is creating...`);
@@ -277,8 +277,6 @@ class Service {
 	 * Start service
 	 *
 	 * @returns {Promise}
-	 * @private
-	 * @memberof Service
 	 */
 	_start() {
 		this.logger.debug(`Service '${this.fullName}' is starting...`);
@@ -307,7 +305,9 @@ class Service {
 			})
 			.then(() => {
 				// Register service
-				return this.broker.registerLocalService(this._serviceSpecification);
+				return this.broker.registerLocalService(
+					/** @type {ServiceItem} */ (this._serviceSpecification)
+				);
 			})
 			.then(() => {
 				return this.broker.callMiddlewareHook("serviceStarted", [this]);
@@ -319,8 +319,6 @@ class Service {
 	 * Stop service
 	 *
 	 * @returns {Promise}
-	 * @private
-	 * @memberof Service
 	 */
 	_stop() {
 		this.logger.debug(`Service '${this.fullName}' is stopping...`);
@@ -355,7 +353,6 @@ class Service {
 	 * @returns {Object}
 	 *
 	 * @private
-	 * @memberof Service
 	 */
 	_createAction(actionDef, name) {
 		let action;
@@ -397,9 +394,9 @@ class Service {
 	/**
 	 * Create an internal service method.
 	 *
-	 * @param {Object|Function} methodDef
+	 * @param {Record<string, any>|Function} methodDef
 	 * @param {String} name
-	 * @returns {Object}
+	 * @returns {Record<string, any>}
 	 */
 	_createMethod(methodDef, name) {
 		let method;
@@ -434,12 +431,11 @@ class Service {
 	/**
 	 * Create an event subscription for broker
 	 *
-	 * @param {Object|Function} eventDef
+	 * @param {Record<string, any>|Function} eventDef
 	 * @param {String} name
-	 * @returns {Object}
+	 * @returns {Record<string, any>}
 	 *
 	 * @private
-	 * @memberof Service
 	 */
 	_createEvent(eventDef, name) {
 		let event;
@@ -466,14 +462,10 @@ class Service {
 		// New: handler(ctx)
 		let handler;
 		if (isFunction(event.handler)) {
-			const args = functionArguments(event.handler);
 			handler = this.Promise.method(event.handler);
-			handler.__newSignature = event.context === true || isNewSignature(args);
 		} else if (Array.isArray(event.handler)) {
 			handler = event.handler.map(h => {
-				const args = functionArguments(h);
 				h = this.Promise.method(h);
-				h.__newSignature = event.context === true || isNewSignature(args);
 				return h;
 			});
 		}
@@ -485,22 +477,12 @@ class Service {
 		if (isFunction(handler)) {
 			// Call single handler
 			event.handler = function (ctx) {
-				return handler.apply(
-					self,
-					handler.__newSignature ? [ctx] : [ctx.params, ctx.nodeID, ctx.eventName, ctx]
-				);
+				return handler.call(self, ctx);
 			};
 		} else if (Array.isArray(handler)) {
 			// Call multiple handler
 			event.handler = function (ctx) {
-				return self.Promise.all(
-					handler.map(fn =>
-						fn.apply(
-							self,
-							fn.__newSignature ? [ctx] : [ctx.params, ctx.nodeID, ctx.eventName, ctx]
-						)
-					)
-				);
+				return self.Promise.all(handler.map(fn => fn.call(self, ctx)));
 			};
 		}
 
@@ -512,7 +494,7 @@ class Service {
 	 *
 	 * @param {String} eventName
 	 * @param {any?} params
-	 * @param {Object?} opts
+	 * @param {Record<string, any>?} opts
 	 */
 	emitLocalEventHandler(eventName, params, opts) {
 		if (!this.events[eventName])
@@ -532,7 +514,6 @@ class Service {
 	 * Getter of current Context.
 	 * @returns {Context?}
 	 *
-	 * @memberof Service
 	 *
 	get currentContext() {
 		return this.broker.getCurrentContext();
@@ -541,7 +522,6 @@ class Service {
 	/**
 	 * Setter of current Context
 	 *
-	 * @memberof Service
 	 *
 	set currentContext(ctx) {
 		this.broker.setCurrentContext(ctx);
@@ -550,11 +530,10 @@ class Service {
 	/**
 	 * Wait for other services
 	 *
-	 * @param {String|Array<String>} serviceNames
-	 * @param {Number} timeout Timeout in milliseconds
-	 * @param {Number} interval Check interval in milliseconds
+	 * @param {string | ServiceDependency | (string | ServiceDependency)[]} serviceNames
+	 * @param {number?} timeout Timeout in milliseconds
+	 * @param {number?} interval Check interval in milliseconds
 	 * @returns {Promise}
-	 * @memberof Service
 	 */
 	waitForServices(serviceNames, timeout, interval) {
 		return this.broker.waitForServices(serviceNames, timeout, interval, this.logger);
@@ -563,10 +542,9 @@ class Service {
 	/**
 	 * Apply `mixins` list in schema. Merge the schema with mixins schemas. Returns with the mixed schema
 	 *
-	 * @param {Schema} schema
-	 * @returns {Schema}
+	 * @param {Partial<ServiceSchema>} schema
+	 * @returns {Partial<ServiceSchema>}
 	 *
-	 * @memberof Service
 	 */
 	applyMixins(schema) {
 		if (schema.mixins) {
@@ -591,11 +569,10 @@ class Service {
 	/**
 	 * Merge two Service schema
 	 *
-	 * @param {Object} mixinSchema		Mixin schema
-	 * @param {Object} svcSchema 		Service schema
-	 * @returns {Object} Mixed schema
+	 * @param {Partial<ServiceSchema>} mixinSchema		Mixin schema
+	 * @param {Partial<ServiceSchema>} svcSchema 		Service schema
+	 * @returns {Partial<ServiceSchema>} Mixed schema
 	 *
-	 * @memberof Service
 	 */
 	mergeSchemas(mixinSchema, svcSchema) {
 		const res = _.cloneDeep(mixinSchema);

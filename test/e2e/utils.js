@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const _ = require("lodash");
 const kleur = require("kleur");
 const fs = require("fs");
@@ -36,7 +35,7 @@ async function executeScenarios(broker, waitForServices, waitForNodeIDs) {
 		await broker.Promise.delay(10 * 1000);
 	}
 
-	await ServiceBroker.Promise.mapSeries(SCENARIOS, async scenario => {
+	await broker.Promise.mapSeries(SCENARIOS, async scenario => {
 		console.log();
 		console.log(kleur.white().bold(`SCENARIO '${scenario.name}': Start...`));
 		try {

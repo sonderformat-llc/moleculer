@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -12,10 +12,8 @@ const { BrokerOptionsError } = require("../errors");
 const Serializers = {
 	Base: require("./base"),
 	JSON: require("./json"),
-	Avro: require("./avro"),
+	JSONExt: require("./json-extended"),
 	MsgPack: require("./msgpack"),
-	ProtoBuf: require("./protobuf"),
-	Thrift: require("./thrift"),
 	Notepack: require("./notepack"),
 	CBOR: require("./cbor")
 };
@@ -31,8 +29,8 @@ function getByName(name) {
 /**
  * Resolve serializer by name
  *
- * @param {object|string} opt
- * @returns {Serializer}
+ * @param {Record<string,any>|string} opt
+ * @returns {any}
  * @memberof ServiceBroker
  */
 function resolve(opt) {

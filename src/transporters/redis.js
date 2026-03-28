@@ -10,18 +10,27 @@ const { MoleculerError } = require("../errors");
 const Transporter = require("./base");
 const { BrokerOptionsError } = require("../errors");
 const C = require("../constants");
+const { isObject } = require("../utils");
+
+/**
+ * Import types
+ *
+ * @typedef {import("./redis")} RedisTransporterClass
+ * @typedef {import("./redis").RedisTransporterOptions} RedisTransporterOptions
+ */
 
 /**
  * Transporter for Redis
  *
  * @class RedisTransporter
  * @extends {Transporter}
+ * @implements {RedisTransporterClass}
  */
 class RedisTransporter extends Transporter {
 	/**
 	 * Creates an instance of RedisTransporter.
 	 *
-	 * @param {any} opts
+	 * @param {RedisTransporterOptions} opts
 	 *
 	 * @memberof RedisTransporter
 	 */
@@ -119,6 +128,8 @@ class RedisTransporter extends Transporter {
 			this.clientPub.disconnect();
 			this.clientPub = null;
 		}
+
+		return this.broker.Promise.resolve();
 	}
 
 	/**
@@ -135,11 +146,32 @@ class RedisTransporter extends Transporter {
 	}
 
 	/**
+	 * Subscribe to balanced action commands
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 */
+	subscribeBalancedRequest() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
+	}
+
+	/**
+	 * Subscribe to balanced event command
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 */
+	subscribeBalancedEvent() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
+	}
+
+	/**
 	 * Send data buffer.
 	 *
 	 * @param {String} topic
 	 * @param {Buffer} data
-	 * @param {Object} meta
 	 *
 	 * @returns {Promise}
 	 */
@@ -155,15 +187,15 @@ class RedisTransporter extends Transporter {
 	/**
 	 * Return redis or redis.cluster client
 	 *
-	 * @param {any} opts
+	 * @param {string|RedisTransporterOptions} opts
 	 *
 	 * @memberof RedisTransporter
 	 */
 	getRedisClient(opts) {
 		let client;
-		let Redis;
+		let R;
 		try {
-			Redis = require("ioredis");
+			R = require("ioredis");
 		} catch (err) {
 			/* istanbul ignore next */
 			this.broker.fatal(
@@ -172,15 +204,15 @@ class RedisTransporter extends Transporter {
 				true
 			);
 		}
-		if (opts && opts.cluster) {
+		if (isObject(opts) && opts.cluster) {
 			if (!opts.cluster.nodes || opts.cluster.nodes.length === 0) {
 				throw new BrokerOptionsError("No nodes defined for cluster");
 			}
 			this.logger.info("Setting Redis.Cluster transporter");
-			client = new Redis.Cluster(opts.cluster.nodes, opts.cluster.clusterOptions);
+			client = new R.Cluster(opts.cluster.nodes, opts.cluster.clusterOptions);
 		} else {
 			this.logger.info("Setting Redis transporter");
-			client = new Redis(opts);
+			client = new R.Redis(/** @type {any} */ (opts));
 		}
 		return client;
 	}

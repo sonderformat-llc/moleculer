@@ -3,6 +3,18 @@
 jest.mock("ioredis");
 const Redis = require("ioredis");
 
+Redis.Cluster = jest.fn(() => {
+	let onCallbacks = {};
+	return {
+		on: jest.fn((event, cb) => (onCallbacks[event] = cb)),
+		disconnect: jest.fn(),
+		subscribe: jest.fn(),
+		publish: jest.fn(),
+
+		onCallbacks
+	};
+});
+
 const BaseDiscoverer = require("../../../../src/registry/discoverers").Base;
 const RedisDiscoverer = require("../../../../src/registry/discoverers").Redis;
 const ServiceBroker = require("../../../../src/service-broker");
@@ -177,7 +189,7 @@ describe("Test RedisDiscoverer 'init' method", () => {
 		expect(discoverer.BEAT_KEY).toBe("MOL-TESTING-DSCVR-BEAT:node-99|12345678");
 		expect(discoverer.INFO_KEY).toBe("MOL-TESTING-DSCVR-INFO:node-99");
 
-		expect(discoverer.client).toBeInstanceOf(Redis.Cluster);
+		expect(discoverer.client).toBeDefined();
 		expect(discoverer.serializer).toBeInstanceOf(Serializers.JSON);
 
 		expect(Redis.Cluster).toHaveBeenCalledTimes(1);
@@ -391,7 +403,7 @@ describe("Test RedisDiscoverer 'sendHeartbeat' method", () => {
 			instanceID: "1234567890",
 			sender: "node-99",
 			seq: 1,
-			ver: "4"
+			ver: "5"
 		});
 		expect(fakePipeline.exec).toBeCalledTimes(1);
 
@@ -431,7 +443,7 @@ describe("Test RedisDiscoverer 'sendHeartbeat' method", () => {
 			instanceID: "1234567890",
 			sender: "node-99",
 			seq: 1,
-			ver: "4"
+			ver: "5"
 		});
 		expect(fakePipeline.exec).toBeCalledTimes(1);
 
@@ -799,7 +811,7 @@ describe("Test RedisDiscoverer 'sendLocalNodeInfo' method", () => {
 		expect(discoverer.client.setex).toBeCalledWith("MOL-DSCVR-INFO:node-99", 1800, {
 			a: 5,
 			sender: "node-99",
-			ver: "4"
+			ver: "5"
 		});
 
 		expect(discoverer.lastInfoSeq).toBe(1);
@@ -820,7 +832,7 @@ describe("Test RedisDiscoverer 'sendLocalNodeInfo' method", () => {
 		expect(discoverer.client.setex).toBeCalledWith("MOL-DSCVR-INFO:node-99", 1800, {
 			a: 5,
 			sender: "node-99",
-			ver: "4"
+			ver: "5"
 		});
 
 		expect(discoverer.lastInfoSeq).toBe(1);
@@ -843,7 +855,7 @@ describe("Test RedisDiscoverer 'sendLocalNodeInfo' method", () => {
 		expect(discoverer.client.setex).toBeCalledWith("MOL-DSCVR-INFO:node-99", 1800, {
 			a: 5,
 			sender: "node-99",
-			ver: "4"
+			ver: "5"
 		});
 
 		expect(broker.transit.tx.makeBalancedSubscriptions).toBeCalledTimes(1);

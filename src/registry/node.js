@@ -1,15 +1,23 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
 "use strict";
 
 /**
+ * Import types
+ *
+ * @typedef {import("./node")} NodeClass
+ * @typedef {import("./registry").NodeRawInfo} NodeRawInfo
+ */
+
+/**
  * Node class
  *
  * @class Node
+ * @implements {NodeClass}
  */
 class Node {
 	/**
@@ -47,7 +55,7 @@ class Node {
 	/**
 	 * Update properties
 	 *
-	 * @param {object} payload
+	 * @param {NodeRawInfo} payload
 	 * @param {boolean} isReconnected
 	 * @memberof Node
 	 */
@@ -74,8 +82,8 @@ class Node {
 	/**
 	 * Update local properties.
 	 *
-	 * @memberof Node
 	 * @param {Function} cpuUsage
+	 * @memberof Node
 	 */
 	updateLocalInfo(cpuUsage) {
 		return cpuUsage()
@@ -94,7 +102,7 @@ class Node {
 	/**
 	 * Update heartbeat properties
 	 *
-	 * @param {any} payload
+	 * @param {object} payload
 	 * @memberof Node
 	 */
 	heartbeat(payload) {

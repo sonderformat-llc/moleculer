@@ -1,12 +1,13 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
 "use strict";
 
-let Redis;
+let R;
+
 const BaseCacher = require("./base");
 const _ = require("lodash");
 const { METRIC } = require("../metrics");
@@ -15,15 +16,23 @@ const Serializers = require("../serializers");
 const C = require("../constants");
 
 /**
+ * Import types
+ *
+ * @typedef {import("../service-broker")} ServiceBroker
+ * @typedef {import("./redis")} RedisCacherClass
+ * @typedef {import("./redis").RedisCacherOptions} RedisCacherOptions
+ */
+
+/**
  * Cacher factory for Redis
  *
- * @class RedisCacher
+ * @implements {RedisCacherClass}
  */
 class RedisCacher extends BaseCacher {
 	/**
 	 * Creates an instance of RedisCacher.
 	 *
-	 * @param {object} opts
+	 * @param {RedisCacherOptions} opts
 	 *
 	 * @memberof RedisCacher
 	 */
@@ -50,14 +59,14 @@ class RedisCacher extends BaseCacher {
 	/**
 	 * Initialize cacher. Connect to Redis server
 	 *
-	 * @param {any} broker
+	 * @param {ServiceBroker} broker
 	 *
 	 * @memberof RedisCacher
 	 */
 	init(broker) {
 		super.init(broker);
 		try {
-			Redis = require("ioredis");
+			R = require("ioredis");
 		} catch (err) {
 			/* istanbul ignore next */
 			this.broker.fatal(
@@ -66,18 +75,19 @@ class RedisCacher extends BaseCacher {
 				true
 			);
 		}
+
 		/**
 		 * ioredis client instance
 		 * @memberof RedisCacher
 		 */
 		if (this.opts.cluster) {
 			if (!this.opts.cluster.nodes || this.opts.cluster.nodes.length === 0) {
-				throw new BrokerOptionsError("No nodes defined for cluster");
+				throw new BrokerOptionsError("There is no 'nodes' configuration for cluster.");
 			}
 
-			this.client = new Redis.Cluster(this.opts.cluster.nodes, this.opts.cluster.options);
+			this.client = new R.Cluster(this.opts.cluster.nodes, this.opts.cluster.options);
 		} else {
-			this.client = new Redis(this.opts.redis);
+			this.client = new R.Redis(this.opts.redis);
 		}
 
 		this.connected = false;
@@ -107,7 +117,7 @@ class RedisCacher extends BaseCacher {
 			let Redlock;
 			try {
 				Redlock = require("redlock");
-			} catch (err) {
+			} catch {
 				Redlock = null;
 			}
 			if (Redlock != null) {
@@ -122,6 +132,7 @@ class RedisCacher extends BaseCacher {
 				});
 			}
 		}
+
 		if (this.opts.monitor) {
 			/* istanbul ignore next */
 			this.client.monitor((err, monitor) => {
@@ -138,7 +149,7 @@ class RedisCacher extends BaseCacher {
 
 		// add interval for ping if set
 		if (this.opts.pingInterval > 0) {
-			this.pingIntervalHandle = setInterval(() => {
+			this.pingTimer = setInterval(() => {
 				this.client
 					.ping()
 					.then(() => {
@@ -169,9 +180,9 @@ class RedisCacher extends BaseCacher {
 	 * @memberof RedisCacher
 	 */
 	close() {
-		if (this.pingIntervalHandle != null) {
-			clearInterval(this.pingIntervalHandle);
-			this.pingIntervalHandle = null;
+		if (this.pingTimer != null) {
+			clearInterval(this.pingTimer);
+			this.pingTimer = null;
 		}
 		return this.client != null ? this.client.quit() : Promise.resolve();
 	}
@@ -204,7 +215,7 @@ class RedisCacher extends BaseCacher {
 				}
 			}
 			timeEnd();
-			return null;
+			return this.opts.missingResponse;
 		});
 	}
 
@@ -259,6 +270,7 @@ class RedisCacher extends BaseCacher {
 
 		deleteTargets = Array.isArray(deleteTargets) ? deleteTargets : [deleteTargets];
 		const keysToDelete = deleteTargets.map(key => this.prefix + key);
+
 		this.logger.debug(`DELETE ${keysToDelete}`);
 		return this.client
 			.del(keysToDelete)
@@ -318,22 +330,24 @@ class RedisCacher extends BaseCacher {
 			.getBuffer(this.prefix + key)
 			.ttl(this.prefix + key)
 			.exec()
-			.then(res => {
-				let [err0, data] = res[0];
-				let [err1, ttl] = res[1];
+			.then(([resBuffer, resTTL]) => {
+				let [err0, data] = resBuffer;
+				const [err1, ttl] = resTTL;
+
 				if (err0) {
 					return this.broker.Promise.reject(err0);
 				}
 				if (err1) {
 					return this.broker.Promise.reject(err1);
 				}
+
 				if (data) {
 					this.logger.debug(`FOUND ${key}`);
 					try {
 						data = this.serializer.deserialize(data);
 					} catch (err) {
 						this.logger.error("Redis result parse error.", err, data);
-						data = null;
+						data = this.opts.missingResponse;
 					}
 				}
 				return { data, ttl };
@@ -446,7 +460,7 @@ class RedisCacher extends BaseCacher {
 	}
 
 	_scanDel(pattern) {
-		if (this.client instanceof Redis.Cluster) {
+		if (this.client instanceof R.Cluster) {
 			return this._clusterScanDel(pattern);
 		} else {
 			return this._nodeScanDel(this.client, pattern);

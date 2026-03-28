@@ -28,7 +28,7 @@ module.exports = function TracingMiddleware(broker) {
 						? {
 								name: ctx.action.name,
 								rawName: ctx.action.rawName
-						  }
+							}
 						: null,
 					remoteCall: ctx.nodeID !== ctx.broker.nodeID,
 					callerNodeID: ctx.nodeID,
@@ -40,6 +40,7 @@ module.exports = function TracingMiddleware(broker) {
 					requestID: ctx.requestID
 				};
 				const globalActionTags = tracer.opts.tags.action;
+				/** @type {Record<string, any>} */
 				let actionTags;
 				// local action tags take precedence
 				if (isFunction(opts.tags)) {
@@ -163,6 +164,7 @@ module.exports = function TracingMiddleware(broker) {
 				};
 
 				const globalEventTags = tracer.opts.tags.event;
+				/** @type {Record<string, any>} */
 				let eventTags;
 				// local event tags take precedence
 				if (isFunction(opts.tags)) {

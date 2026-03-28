@@ -4,10 +4,10 @@ const { protectReject } = require("../utils");
 const C = require("../../../src/constants");
 
 jest.mock("ioredis");
-const Redis = require("ioredis");
+const R = require("ioredis");
 const BaseLogger = require("../../../src/loggers/base");
 
-Redis.mockImplementation(() => {
+R.Redis = jest.fn(() => {
 	let onCallbacks = {};
 	return {
 		on: jest.fn((event, cb) => (onCallbacks[event] = cb)),
@@ -16,6 +16,18 @@ Redis.mockImplementation(() => {
 		publish: jest.fn(),
 		quit: jest.fn(),
 		set: jest.fn(),
+
+		onCallbacks
+	};
+});
+
+R.Cluster = jest.fn(() => {
+	let onCallbacks = {};
+	return {
+		on: jest.fn((event, cb) => (onCallbacks[event] = cb)),
+		disconnect: jest.fn(),
+		subscribe: jest.fn(),
+		publish: jest.fn(),
 
 		onCallbacks
 	};
@@ -77,14 +89,14 @@ describe("Test RedisCacher init", () => {
 	it("should create Redis client with default options", () => {
 		const cacher = new RedisCacher();
 
-		Redis.mockClear();
+		R.Redis.mockClear();
 		cacher.init(broker);
 
 		// expect(cacher.client).toBeInstanceOf(Redis);
 		expect(cacher.serializer).toBeInstanceOf(Serializers.JSON);
 
-		expect(Redis).toHaveBeenCalledTimes(1);
-		expect(Redis).toHaveBeenCalledWith(undefined);
+		expect(R.Redis).toHaveBeenCalledTimes(1);
+		expect(R.Redis).toHaveBeenCalledWith(undefined);
 	});
 
 	it("should create Redis client with default options", () => {
@@ -92,14 +104,14 @@ describe("Test RedisCacher init", () => {
 		const cacher = new RedisCacher(opts);
 
 		jest.spyOn(Serializers.JSON.prototype, "init");
-		Redis.mockClear();
+		R.Redis.mockClear();
 		cacher.init(broker);
 
 		// expect(cacher.client).toBeInstanceOf(Redis);
 		expect(cacher.serializer).toBeInstanceOf(Serializers.JSON);
 
-		expect(Redis).toHaveBeenCalledTimes(1);
-		expect(Redis).toHaveBeenCalledWith(opts.redis);
+		expect(R.Redis).toHaveBeenCalledTimes(1);
+		expect(R.Redis).toHaveBeenCalledWith(opts.redis);
 
 		expect(Serializers.JSON.prototype.init).toHaveBeenCalledTimes(1);
 		expect(Serializers.JSON.prototype.init).toHaveBeenCalledWith(broker);
@@ -110,7 +122,7 @@ describe("Test RedisCacher init", () => {
 
 		const cacher = new RedisCacher();
 
-		Redis.mockClear();
+		R.Redis.mockClear();
 		cacher.init(broker);
 
 		cacher.client.onCallbacks.error(new Error("Ups!"));
@@ -164,7 +176,7 @@ describe("Test RedisCacher cluster", () => {
 		expect(cacher).toBeDefined();
 		expect(cacher.opts).toEqual(opts);
 		cacher.init(broker);
-		expect(cacher.client).toBeInstanceOf(Redis.Cluster);
+		expect(cacher.client).toBeDefined();
 	});
 
 	it("should fail to init redis cluster without nodes", () => {
@@ -183,7 +195,7 @@ describe("Test RedisCacher cluster", () => {
 		expect(cacher.opts).toEqual(opts);
 		expect(() => {
 			cacher.init(broker);
-		}).toThrowError("No nodes defined for cluster");
+		}).toThrowError("There is no 'nodes' configuration for cluster.");
 	});
 
 	it("should construct serializer based on options", () => {
@@ -332,14 +344,14 @@ describe("Test RedisCacher set & get without prefix", () => {
 		});
 	});
 
-	it("should give null if response cannot be deserialized", () => {
+	it("should give undefined if response cannot be deserialized", () => {
 		cacher.client.getBuffer = jest.fn(() => Promise.resolve("{ 'asd' 5}")); // Invalid JSON
 
 		let p = cacher.get(key);
 		expect(cacher.client.getBuffer).toHaveBeenCalledTimes(1);
 		expect(cacher.client.getBuffer).toHaveBeenCalledWith(prefix + key);
 		return p.catch(protectReject).then(d => {
-			expect(d).toBeNull();
+			expect(d).toBeUndefined();
 		});
 	});
 
@@ -634,7 +646,7 @@ describe("Test RedisCacher getWithTTL method", () => {
 		});
 	});
 
-	it("should return null if data cannot be deserialized", () => {
+	it("should return undefined if data cannot be deserialized", () => {
 		mockPipeline.exec = jest.fn(() =>
 			Promise.resolve([
 				[null, "{'some invalid JSON here."],
@@ -642,7 +654,7 @@ describe("Test RedisCacher getWithTTL method", () => {
 			])
 		);
 		return cacher.getWithTTL(key).then(res => {
-			expect(res.data).toBeNull();
+			expect(res.data).toBeUndefined();
 		});
 	});
 });

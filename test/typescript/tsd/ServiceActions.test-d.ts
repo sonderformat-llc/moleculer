@@ -1,13 +1,14 @@
 import { expectType } from "tsd";
 import {
+	Context,
 	Service,
 	ServiceBroker,
 	ServiceAction,
 	ServiceActions,
-	ServiceSettingSchema,
+	ServiceSettingSchema
 } from "../../../index";
 
-const broker = new ServiceBroker({ logger: false, transporter: "fake" });
+const broker = new ServiceBroker({ logger: false, transporter: "Fake" });
 
 class TestService extends Service {
 	constructor(broker: ServiceBroker) {
@@ -17,18 +18,20 @@ class TestService extends Service {
 			name: "test1",
 			actions: {
 				foo: {
-					async handler() {
-						expectType<Service<ServiceSettingSchema>>(this);
+					async handler(ctx: Context<{a: number}>) {
+						expectType<Service<ServiceSettingSchema> & Record<string, any>>(this);
 						expectType<ServiceActions>(testService.actions);
-					},
+						expectType<number>(ctx.params.a);
+					}
 				},
-				bar() {
+				bar(ctx: Context<{a: number}>) {
 					this.actions.foo(); // check `this` ref in `foo`, should not throw error;
 
-					expectType<Service<ServiceSettingSchema>>(this);
+					expectType<Service<ServiceSettingSchema> & Record<string, any>>(this);
 					expectType<ServiceActions>(testService.actions);
-				},
-			},
+					expectType<number>(ctx.params.a);
+				}
+			}
 		});
 	}
 }

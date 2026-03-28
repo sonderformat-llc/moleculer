@@ -1,5 +1,3 @@
-/* eslint-disable no-console, no-unused-vars */
-
 "use strict";
 
 const fs = require("fs");
@@ -74,7 +72,7 @@ function createBrokers(Transporter, opts) {
 	return b1.Promise.all([b1.start(), b2.start()]).then(() => [b1, b2]);
 }
 
-createBrokers(Transporters.Fake).then(([b1, b2]) => {
+createBrokers(Transporters.NATS).then(([b1, b2]) => {
 	let count = 0;
 	function doRequest() {
 		count++;

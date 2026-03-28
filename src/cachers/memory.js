@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -12,16 +12,26 @@ const BaseCacher = require("./base");
 const { METRIC } = require("../metrics");
 
 const Lock = require("../lock");
+
+/**
+ * Import types
+ *
+ * @typedef {import("../service-broker")} ServiceBroker
+ * @typedef {import("./memory")} MemoryCacherClass
+ * @typedef {import("./memory").MemoryCacherOptions} MemoryCacherOptions
+ */
+
 /**
  * Cacher factory for memory cache
  *
- * @class MemoryCacher
+ * @implements {MemoryCacherClass}
+ * @extends {BaseCacher<MemoryCacherOptions>}
  */
 class MemoryCacher extends BaseCacher {
 	/**
 	 * Creates an instance of MemoryCacher.
 	 *
-	 * @param {object} opts
+	 * @param {MemoryCacherOptions?} opts
 	 *
 	 * @memberof MemoryCacher
 	 */
@@ -46,7 +56,7 @@ class MemoryCacher extends BaseCacher {
 	/**
 	 * Initialize cacher
 	 *
-	 * @param {any} broker
+	 * @param {ServiceBroker} broker
 	 *
 	 * @memberof MemoryCacher
 	 */
@@ -74,7 +84,7 @@ class MemoryCacher extends BaseCacher {
 	/**
 	 * Get data from cache by key
 	 *
-	 * @param {any} key
+	 * @param {string} key
 	 * @returns {Promise}
 	 *
 	 * @memberof MemoryCacher
@@ -94,7 +104,7 @@ class MemoryCacher extends BaseCacher {
 				this.metrics.increment(METRIC.MOLECULER_CACHER_EXPIRED_TOTAL);
 				this.cache.delete(key);
 				timeEnd();
-				return this.broker.Promise.resolve(null);
+				return this.broker.Promise.resolve(this.opts.missingResponse);
 			}
 			const res = this.clone ? this.clone(item.data) : item.data;
 			timeEnd();
@@ -103,7 +113,7 @@ class MemoryCacher extends BaseCacher {
 		} else {
 			timeEnd();
 		}
-		return this.broker.Promise.resolve(null);
+		return this.broker.Promise.resolve(this.opts.missingResponse);
 	}
 
 	/**
@@ -143,11 +153,11 @@ class MemoryCacher extends BaseCacher {
 	 *
 	 * @memberof MemoryCacher
 	 */
-	del(keys) {
+	del(key) {
 		this.metrics.increment(METRIC.MOLECULER_CACHER_DEL_TOTAL);
 		const timeEnd = this.metrics.timer(METRIC.MOLECULER_CACHER_DEL_TIME);
 
-		keys = Array.isArray(keys) ? keys : [keys];
+		const keys = Array.isArray(key) ? key : [key];
 		keys.forEach(key => {
 			this.cache.delete(key);
 			this.logger.debug(`REMOVE ${key}`);
@@ -159,6 +169,7 @@ class MemoryCacher extends BaseCacher {
 
 	/**
 	 * Clean cache. Remove every key by match
+	 *
 	 * @param {string|Array<string>} match string. Default is "**"
 	 * @returns {Promise}
 	 *
@@ -192,7 +203,7 @@ class MemoryCacher extends BaseCacher {
 	 */
 	getWithTTL(key) {
 		this.logger.debug(`GET ${key}`);
-		let data = null;
+		let data = this.opts.missingResponse;
 		let ttl = null;
 		if (this.cache.has(key)) {
 			this.logger.debug(`FOUND ${key}`);

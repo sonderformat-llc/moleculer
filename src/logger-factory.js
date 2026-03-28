@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -14,13 +14,25 @@ const noop = () => {};
 const cwd = process.cwd();
 
 /**
+ * Import types
+ *
+ * @typedef {import("./service-broker")} ServiceBroker
+ * @typedef {import("./logger-factory")} LoggerFactoryClass
+ * @typedef {import("./logger-factory").LoggerBindings} LoggerBindings
+ * @typedef {import("./logger-factory").Logger} Logger
+ * @typedef {import("./loggers/base")} BaseLogger
+ */
+
+/**
  * Log factory class.
  *
- * @class LoggerFactory
+ * @implements {LoggerFactoryClass}
  */
 class LoggerFactory {
 	/**
 	 * Constructor of LoggerFactory
+	 *
+	 * @param {ServiceBroker} broker
 	 */
 	constructor(broker) {
 		this.broker = broker;
@@ -91,6 +103,7 @@ class LoggerFactory {
 		Error.prepareStackTrace = _prepareStackTrace;
 
 		if (stack.length > 2) {
+			/** @type {any} */
 			const site = stack[2];
 			return {
 				filename: site.getFileName().substring(cwd.length + 1),
@@ -105,8 +118,8 @@ class LoggerFactory {
 	/**
 	 * Get a logger for a module (service, transporter, cacher, context...etc)
 	 *
-	 * @param {Object} bindings
-	 * @returns {ModuleLogger}
+	 * @param {LoggerBindings} bindings
+	 * @returns {Logger}
 	 *
 	 * @memberof ServiceBroker
 	 */
@@ -129,7 +142,7 @@ class LoggerFactory {
 				if (hasNewLogEntryMiddleware)
 					broker.middlewares.callSyncHandlers("newLogEntry", [type, args, bindings], {});
 
-				if (logHandlers.length == 0) return;
+				if (logHandlers.length === 0) return;
 
 				for (let i = 0; i < logHandlers.length; i++) logHandlers[i](type, args);
 			};
@@ -139,7 +152,7 @@ class LoggerFactory {
 			if (broker.middlewares)
 				broker.middlewares.callSyncHandlers("newLogEntry", [type, args, bindings], {});
 
-			if (logHandlers.length == 0) return;
+			if (logHandlers.length === 0) return;
 
 			logHandlers.forEach(fn => fn(type, args));
 		};*/
@@ -154,7 +167,7 @@ class LoggerFactory {
 	/**
 	 * Create a key from bindings for logger caching.
 	 *
-	 * @param {object} bindings
+	 * @param {LoggerBindings} bindings
 	 * @returns {String}
 	 */
 	getBindingsKey(bindings) {

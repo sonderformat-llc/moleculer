@@ -36,7 +36,10 @@ describe("Test Context", () => {
 
 		expect(ctx.params).toBeNull();
 		expect(ctx.meta).toEqual({});
+		expect(ctx.headers).toEqual({});
+		expect(ctx.responseHeaders).toEqual({});
 		expect(ctx.locals).toEqual({});
+		expect(ctx.stream).toEqual(null);
 
 		expect(ctx.requestID).toBe(ctx.id);
 
@@ -93,6 +96,8 @@ describe("Test Context.create", () => {
 
 		expect(ctx.params).toEqual({ a: 5 });
 		expect(ctx.meta).toEqual({});
+		expect(ctx.headers).toEqual({});
+		expect(ctx.responseHeaders).toEqual({});
 
 		expect(ctx.options).toEqual({});
 
@@ -119,6 +124,9 @@ describe("Test Context.create", () => {
 			meta: {
 				user: "John",
 				c: 200
+			},
+			headers: {
+				contentType: "json"
 			},
 			parentCtx: {
 				id: 100,
@@ -158,6 +166,10 @@ describe("Test Context.create", () => {
 			user: "John",
 			c: 200
 		});
+		expect(ctx.headers).toEqual({
+			contentType: "json"
+		});
+		expect(ctx.responseHeaders).toEqual({});
 
 		expect(ctx.options).toEqual(opts);
 
@@ -192,6 +204,9 @@ describe("Test Context.create", () => {
 			meta: {
 				user: "John",
 				c: 200
+			},
+			headers: {
+				contentType: "json"
 			},
 			parentCtx: {
 				id: 100,
@@ -232,6 +247,10 @@ describe("Test Context.create", () => {
 			user: "John",
 			c: 200
 		});
+		expect(ctx.headers).toEqual({
+			contentType: "json"
+		});
+		expect(ctx.responseHeaders).toEqual({});
 
 		expect(ctx.options).toEqual(opts);
 
@@ -305,6 +324,12 @@ describe("Test copy", () => {
 				user: "John",
 				c: 200
 			},
+			headers: {
+				contentType: "json"
+			},
+			responseHeaders: {
+				valid: true
+			},
 			locals: {
 				entity: "entity"
 			},
@@ -342,6 +367,8 @@ describe("Test copy", () => {
 
 		expect(ctx.params).toEqual(baseCtx.params);
 		expect(ctx.meta).toEqual(baseCtx.meta);
+		expect(ctx.headers).toEqual(baseCtx.headers);
+		expect(ctx.responseHeaders).toEqual(baseCtx.responseHeaders);
 		expect(ctx.locals).toEqual(baseCtx.locals);
 
 		expect(ctx.options).toEqual(baseCtx.options);
@@ -391,6 +418,8 @@ describe("Test copy", () => {
 
 		expect(ctx.params).toEqual(baseCtx.params);
 		expect(ctx.meta).toEqual(baseCtx.meta);
+		expect(ctx.headers).toEqual(baseCtx.headers);
+		expect(ctx.responseHeaders).toEqual(baseCtx.responseHeaders);
 
 		expect(ctx.options).toEqual(baseCtx.options);
 
@@ -481,13 +510,13 @@ describe("Test setParams", () => {
 		expect(ctx.params).toBe(params2);
 	});
 
-	it("should clone the params", () => {
+	it("should clone the params (object)", () => {
 		let params1 = {
 			a: 1
 		};
 
 		let ctx = new Context();
-		ctx.params1 = params1;
+		ctx.params = params1;
 
 		let params2 = {
 			b: 5
@@ -496,6 +525,67 @@ describe("Test setParams", () => {
 		ctx.setParams(params2, true);
 		expect(ctx.params).not.toBe(params2);
 		expect(ctx.params).toEqual(params2);
+	});
+
+	it("should clone the params (array)", () => {
+		let params1 = [1, 2, 3, 4];
+
+		let ctx = new Context();
+		ctx.params = params1;
+
+		let params2 = [9, 8, 7, 6];
+
+		ctx.setParams(params2, true);
+		expect(ctx.params).not.toBe(params2);
+		expect(ctx.params).toEqual(params2);
+	});
+
+	it("should clone the params (null)", () => {
+		let params1 = [1, 2, 3, 4];
+
+		let ctx = new Context();
+		ctx.params = params1;
+
+		let params2 = null;
+
+		ctx.setParams(params2, true);
+		expect(ctx.params).toBeNull();
+	});
+
+	it("should clone the params (undefined)", () => {
+		let params1 = [1, 2, 3, 4];
+
+		let ctx = new Context();
+		ctx.params = params1;
+
+		let params2 = undefined;
+
+		ctx.setParams(params2, true);
+		expect(ctx.params).toBeUndefined();
+	});
+
+	it("should clone the params (number)", () => {
+		let params1 = [1, 2, 3, 4];
+
+		let ctx = new Context();
+		ctx.params = params1;
+
+		let params2 = 5;
+
+		ctx.setParams(params2, true);
+		expect(ctx.params).toBe(5);
+	});
+
+	it("should clone the params (string)", () => {
+		let params1 = [1, 2, 3, 4];
+
+		let ctx = new Context();
+		ctx.params = params1;
+
+		let params2 = "Hello";
+
+		ctx.setParams(params2, true);
+		expect(ctx.params).toBe("Hello");
 	});
 });
 
@@ -524,13 +614,21 @@ describe("Test call method", () => {
 		ctx.level = 4;
 
 		let p = { id: 5 };
-		let opts = { timeout: 2500 };
+		let opts = {
+			timeout: 2500,
+			headers: {
+				contentType: "json"
+			}
+		};
 		ctx.call("posts.find", p, opts);
 
 		expect(broker.call).toHaveBeenCalledTimes(1);
 		expect(broker.call).toHaveBeenCalledWith("posts.find", p, {
 			parentCtx: ctx,
-			timeout: 2500
+			timeout: 2500,
+			headers: {
+				contentType: "json"
+			}
 		});
 		expect(broker.call.mock.calls[0][2]).not.toBe(opts);
 		expect(opts.parentCtx).toBeUndefined();
@@ -865,29 +963,9 @@ describe("Test emit method", () => {
 		});
 	});
 
-	it("should call broker.emit method with string param", () => {
-		broker.emit.mockClear();
-		ctx.emit("request.rest", "string-data");
-		expect(broker.emit).toHaveBeenCalledTimes(1);
-		expect(broker.emit).toHaveBeenCalledWith("request.rest", "string-data", {
-			parentCtx: ctx,
-			groups: undefined
-		});
-	});
-
-	it("should call broker.emit method without payload & group", () => {
-		broker.emit.mockClear();
-		ctx.emit("request.rest", null, "mail");
-		expect(broker.emit).toHaveBeenCalledTimes(1);
-		expect(broker.emit).toHaveBeenCalledWith("request.rest", null, {
-			parentCtx: ctx,
-			groups: ["mail"]
-		});
-	});
-
 	it("should call broker.emit method without payload & groups", () => {
 		broker.emit.mockClear();
-		ctx.emit("request.rest", null, ["mail", "users"]);
+		ctx.emit("request.rest", null, { groups: ["mail", "users"] });
 		expect(broker.emit).toHaveBeenCalledTimes(1);
 		expect(broker.emit).toHaveBeenCalledWith("request.rest", null, {
 			parentCtx: ctx,
@@ -899,12 +977,18 @@ describe("Test emit method", () => {
 		const data = { id: 5 };
 		broker.emit.mockClear();
 		ctx.emit("request.rest", data, {
-			groups: ["mail"]
+			groups: "mail",
+			headers: {
+				contentType: "json"
+			}
 		});
 		expect(broker.emit).toHaveBeenCalledTimes(1);
 		expect(broker.emit).toHaveBeenCalledWith("request.rest", data, {
 			parentCtx: ctx,
-			groups: ["mail"]
+			groups: ["mail"],
+			headers: {
+				contentType: "json"
+			}
 		});
 	});
 });
@@ -936,19 +1020,9 @@ describe("Test broadcast method", () => {
 		});
 	});
 
-	it("should call broker.broadcast method without payload & group", () => {
-		broker.broadcast.mockClear();
-		ctx.broadcast("request.rest", null, "users");
-		expect(broker.broadcast).toHaveBeenCalledTimes(1);
-		expect(broker.broadcast).toHaveBeenCalledWith("request.rest", null, {
-			parentCtx: ctx,
-			groups: ["users"]
-		});
-	});
-
 	it("should call broker.broadcast method without payload & groups", () => {
 		broker.broadcast.mockClear();
-		ctx.broadcast("request.rest", null, ["mail", "users"]);
+		ctx.broadcast("request.rest", null, { groups: ["mail", "users"] });
 		expect(broker.broadcast).toHaveBeenCalledTimes(1);
 		expect(broker.broadcast).toHaveBeenCalledWith("request.rest", null, {
 			parentCtx: ctx,
@@ -960,12 +1034,18 @@ describe("Test broadcast method", () => {
 		const data = { id: 5 };
 		broker.broadcast.mockClear();
 		ctx.broadcast("request.rest", data, {
-			groups: ["mail"]
+			groups: "mail",
+			headers: {
+				contentType: "json"
+			}
 		});
 		expect(broker.broadcast).toHaveBeenCalledTimes(1);
 		expect(broker.broadcast).toHaveBeenCalledWith("request.rest", data, {
 			parentCtx: ctx,
-			groups: ["mail"]
+			groups: ["mail"],
+			headers: {
+				contentType: "json"
+			}
 		});
 	});
 });
@@ -1080,6 +1160,9 @@ describe("Test toJSON method", () => {
 				user: "John",
 				c: 200
 			},
+			headers: {
+				contentType: "json"
+			},
 			locals: {
 				entity: "entity"
 			},
@@ -1103,6 +1186,9 @@ describe("Test toJSON method", () => {
 	ctx.eventGroups = ["users", "mail"];
 	ctx.needAck = true;
 	ctx.ackID = "ACK-123";
+	ctx.responseHeaders = {
+		valid: true
+	};
 
 	it("should generate POJO", () => {
 		expect(ctx.toJSON()).toEqual({
@@ -1126,6 +1212,12 @@ describe("Test toJSON method", () => {
 				token: "123456",
 				c: 200,
 				user: "John"
+			},
+			headers: {
+				contentType: "json"
+			},
+			responseHeaders: {
+				valid: true
 			},
 			options: ctx.options,
 			params: {

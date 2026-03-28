@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -12,22 +12,38 @@ const dgram = require("dgram");
 const METRIC = require("../constants");
 
 /**
+ * Import types
+ *
+ * @typedef {import("../registry")} MetricRegistry
+ * @typedef {import("./statsd").StatsDReporterOptions} StatsDReporterOptions
+ * @typedef {import("./statsd")} StatsDReporterClass
+ * @typedef {import("../types/base").BaseMetricPOJO} BaseMetricPOJO
+ * @typedef {import("../types/base")} BaseMetric
+ */
+
+/**
  * UDP (StatsD) reporter for Moleculer.
  *
+ * @class DatadogReporter
+ * @extends {BaseReporter}
+ * @implements {StatsDReporterClass}
  */
 class StatsDReporter extends BaseReporter {
 	/**
 	 * Constructor of StatsDReporters
 	 *
-	 * @param {Object} opts
+	 * @param {StatsDReporterOptions} opts
 	 * @memberof StatsDReporter
 	 */
 	constructor(opts) {
 		super(opts);
 
+		/** @type {StatsDReporterOptions} */
 		this.opts = _.defaultsDeep(this.opts, {
 			host: "localhost",
 			port: 8125,
+
+			types: null,
 
 			maxPayloadSize: 1300
 		});
@@ -53,7 +69,7 @@ class StatsDReporter extends BaseReporter {
 	flush() {
 		const series = this.generateStatsDSeries();
 
-		if (series.length == 0) return;
+		if (series.length === 0) return;
 
 		this.sendChunks(series);
 	}
@@ -167,7 +183,6 @@ class StatsDReporter extends BaseReporter {
 	 * @param {BaseMetric} metric
 	 * @param {any} value
 	 * @param {Object} labels
-	 * @param {Number?} timestamp
 	 *
 	 * @memberof BaseReporter
 	 */
@@ -195,14 +210,14 @@ class StatsDReporter extends BaseReporter {
 	 * Convert labels to StatsD label string
 	 *
 	 * @param {Object} itemLabels
-	 * @returns {Array<String>}
+	 * @returns {String}
 	 *
 	 * @memberof StatsDReporter
 	 */
 	labelsToTags(itemLabels) {
 		const labels = Object.assign({}, this.defaultLabels || {}, itemLabels || {});
 		const keys = Object.keys(labels);
-		if (keys.length == 0) return "";
+		if (keys.length === 0) return "";
 
 		return keys
 			.map(key => `${this.formatLabelName(key)}:${this.escapeLabelValue(labels[key])}`)

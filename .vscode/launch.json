@@ -12,8 +12,6 @@
 			"cwd": "${workspaceRoot}",
 			"args": [
 				"${fileBasenameNoExtension}"
-				//"client",
-				//"client2"
 			],
 		},
 		{
@@ -61,6 +59,17 @@
 		{
 			"type": "node",
 			"request": "launch",
+			"name": "Launch demo: opentelemetry",
+			"program": "${workspaceRoot}/examples/opentelemetry/index.js",
+			"runtimeArgs": [
+				"-r",
+				"./examples/opentelemetry/tracing.js"
+			],
+			"cwd": "${workspaceRoot}"
+		},
+		{
+			"type": "node",
+			"request": "launch",
 			"name": "Launch benchmark",
 			"program": "${workspaceRoot}/benchmark/index.js",
 			"args": ["common"],
@@ -92,7 +101,11 @@
 			"cwd": "${workspaceRoot}",
 			"runtimeArgs": [
                 "--nolazy"
-            ]
+            ],
+			"outFiles": [
+				"${workspaceFolder}/**/*.js",
+				"!**/node_modules/**"
+			]
 		},
 		{
 			"type": "node",
@@ -106,6 +119,18 @@
 			"env": {
 				"AMQP_URI": "amqp://192.168.51.29:5672"
 			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "Launch E2E test",
+			"program": "${workspaceRoot}/test/e2e/scenarios/dependencies/scenario.js",
+			"cwd": "${workspaceRoot}/test/e2e/scenarios/dependencies",
+			"env": {
+				"TRANSPORTER": "Kafka",
+				"DISCOVERER": "Etcd3",
+				"LOGLEVEL": "debug"
+			},
 		},
 		{
 			"type": "node",

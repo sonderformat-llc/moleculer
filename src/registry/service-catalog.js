@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -11,9 +11,22 @@ const ServiceItem = require("./service-item");
 const { removeFromArray } = require("../utils");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./service-catalog")} ServiceCatalogClass
+ * @typedef {import("./service-catalog").ServiceCatalogListOptions} ServiceCatalogListOptions
+ * @typedef {import("./service-catalog").ServiceCatalogListResult} ServiceCatalogListResult
+ * @typedef {import("./service-catalog").ServiceCatalogLocalNodeServicesResult} ServiceCatalogLocalNodeServicesResult
+ * @typedef {import("./registry")} Registry
+ * @typedef {import("./node")} Node
+ * @typedef {import("../service-broker")} ServiceBroker
+ */
+
+/**
  * Catalog for services
  *
  * @class ServiceCatalog
+ * @implements {ServiceCatalogClass}
  */
 class ServiceCatalog {
 	/**
@@ -53,7 +66,7 @@ class ServiceCatalog {
 	 *
 	 * @param {String} fullName
 	 * @param {String} nodeID
-	 * @returns
+	 * @returns {Boolean}
 	 * @memberof ServiceCatalog
 	 */
 	has(fullName, nodeID) {
@@ -65,7 +78,7 @@ class ServiceCatalog {
 	 *
 	 * @param {String} fullName
 	 * @param {String} nodeID
-	 * @returns
+	 * @returns {ServiceItem}
 	 * @memberof ServiceCatalog
 	 */
 	get(fullName, nodeID) {
@@ -75,8 +88,8 @@ class ServiceCatalog {
 	/**
 	 * Get a filtered list of services with actions
 	 *
-	 * @param {Object} {onlyLocal = false,  onlyAvailable = false, skipInternal = false, withActions = false, withEvents = false, grouping = false}
-	 * @returns {Array}
+	 * @param {ServiceCatalogListOptions} opts
+	 * @returns {ServiceCatalogListResult[]}
 	 *
 	 * @memberof Registry
 	 */
@@ -87,7 +100,7 @@ class ServiceCatalog {
 		withActions = false,
 		withEvents = false,
 		grouping = false
-	}) {
+	} = {}) {
 		let res = [];
 		this.services.forEach(service => {
 			if (skipInternal && /^\$/.test(service.name)) return;
@@ -155,7 +168,7 @@ class ServiceCatalog {
 	/**
 	 * Get local service list for INFO packet
 	 *
-	 * @returns {Object}
+	 * @returns {ServiceCatalogLocalNodeServicesResult[]}
 	 * @memberof ServiceCatalog
 	 */
 	getLocalNodeServices() {

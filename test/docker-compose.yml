@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   nats:
     image: nats:2
@@ -21,14 +19,6 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
-
-  stan:
-    image: nats-streaming
-    ports:
-      - "4222:4222"
-    volumes:
-      - ./nats.config:/nats.config
-    command: "-c /nats.config"
 
   activemq:
     image: rmohr/activemq

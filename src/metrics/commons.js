@@ -10,12 +10,12 @@ const os = require("os");
 const METRIC = require("./constants");
 const cpuUsage = require("../cpu-usage");
 
-let v8, eventLoop;
+let v8;
 
 // Load `v8` module for heap metrics.
 try {
 	v8 = require("v8");
-} catch (e) {
+} catch {
 	// silent
 }
 
@@ -170,12 +170,6 @@ function registerCommonMetrics() {
 		type: METRIC.TYPE_GAUGE,
 		unit: METRIC.UNIT_HANDLE,
 		description: "Number of active process handlers"
-	});
-	this.register({
-		name: METRIC.PROCESS_INTERNAL_ACTIVE_REQUESTS,
-		type: METRIC.TYPE_GAUGE,
-		unit: METRIC.UNIT_REQUEST,
-		description: "Number of active process requests"
 	});
 
 	this.register({
@@ -350,100 +344,7 @@ function registerCommonMetrics() {
 		description: "CPU system time"
 	});
 
-	startGCWatcher.call(this);
-	startEventLoopStats.call(this);
-
 	this.logger.debug(`Registered ${this.store.size} common metrics.`);
-}
-
-/**
- * Start GC watcher listener.
- */
-function startGCWatcher() {
-	// Load `gc-stats` module for GC metrics.
-	try {
-		const gc = require("gc-stats")();
-
-		/* istanbul ignore next */
-		if (gc) {
-			// --- GARBAGE COLLECTOR METRICS ---
-
-			this.register({
-				name: METRIC.PROCESS_GC_TIME,
-				type: METRIC.TYPE_GAUGE,
-				unit: METRIC.UNIT_NANOSECONDS,
-				description: "GC time"
-			});
-			this.register({
-				name: METRIC.PROCESS_GC_TOTAL_TIME,
-				type: METRIC.TYPE_GAUGE,
-				unit: METRIC.UNIT_MILLISECONDS,
-				description: "Total time of GC"
-			});
-			this.register({
-				name: METRIC.PROCESS_GC_EXECUTED_TOTAL,
-				type: METRIC.TYPE_GAUGE,
-				labelNames: ["type"],
-				unit: null,
-				description: "Number of executed GC"
-			});
-
-			gc.on("stats", stats => {
-				this.set(METRIC.PROCESS_GC_TIME, stats.pause);
-				this.increment(METRIC.PROCESS_GC_TOTAL_TIME, null, stats.pause / 1e6);
-				if (stats.gctype == 1)
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "scavenge" });
-				if (stats.gctype == 2)
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "marksweep" });
-				if (stats.gctype == 4)
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "incremental" });
-				if (stats.gctype == 8)
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "weakphantom" });
-				if (stats.gctype == 15) {
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "scavenge" });
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "marksweep" });
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "incremental" });
-					this.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: "weakphantom" });
-				}
-			});
-		}
-	} catch (e) {
-		// silent
-	}
-}
-
-function startEventLoopStats() {
-	// Load `event-loop-stats` metric for Event-loop metrics.
-	try {
-		eventLoop = require("event-loop-stats");
-		if (eventLoop) {
-			this.register({
-				name: METRIC.PROCESS_EVENTLOOP_LAG_MIN,
-				type: METRIC.TYPE_GAUGE,
-				unit: METRIC.UNIT_MILLISECONDS,
-				description: "Minimum of event loop lag"
-			});
-			this.register({
-				name: METRIC.PROCESS_EVENTLOOP_LAG_AVG,
-				type: METRIC.TYPE_GAUGE,
-				unit: METRIC.UNIT_MILLISECONDS,
-				description: "Average of event loop lag"
-			});
-			this.register({
-				name: METRIC.PROCESS_EVENTLOOP_LAG_MAX,
-				type: METRIC.TYPE_GAUGE,
-				unit: METRIC.UNIT_MILLISECONDS,
-				description: "Maximum of event loop lag"
-			});
-			this.register({
-				name: METRIC.PROCESS_EVENTLOOP_LAG_COUNT,
-				type: METRIC.TYPE_GAUGE,
-				description: "Number of event loop lag samples."
-			});
-		}
-	} catch (e) {
-		// silent
-	}
 }
 
 /**
@@ -496,8 +397,7 @@ function updateCommonMetrics() {
 	}
 
 	this.set(METRIC.PROCESS_UPTIME, process.uptime());
-	this.set(METRIC.PROCESS_INTERNAL_ACTIVE_HANDLES, process._getActiveHandles().length);
-	this.set(METRIC.PROCESS_INTERNAL_ACTIVE_REQUESTS, process._getActiveRequests().length);
+	this.set(METRIC.PROCESS_INTERNAL_ACTIVE_HANDLES, process.getActiveResourcesInfo().length);
 
 	// --- OS METRICS ---
 
@@ -550,14 +450,6 @@ function updateCommonMetrics() {
 	this.set(METRIC.OS_CPU_LOAD_5, load[1]);
 	this.set(METRIC.OS_CPU_LOAD_15, load[2]);
 
-	if (eventLoop && eventLoop.sense) {
-		const stat = eventLoop.sense();
-		this.set(METRIC.PROCESS_EVENTLOOP_LAG_MIN, stat.min);
-		this.set(METRIC.PROCESS_EVENTLOOP_LAG_AVG, stat.num ? stat.sum / stat.num : 0);
-		this.set(METRIC.PROCESS_EVENTLOOP_LAG_MAX, stat.max);
-		this.set(METRIC.PROCESS_EVENTLOOP_LAG_COUNT, stat.num);
-	}
-
 	// this.increment(METRIC.MOLECULER_METRICS_COMMON_COLLECT_TOTAL);
 	const duration = end();
 
@@ -584,7 +476,7 @@ function updateCommonMetrics() {
 						this.set(METRIC.OS_CPU_INFO_TIMES_USER, cpu.times.user, { index });
 						this.set(METRIC.OS_CPU_INFO_TIMES_SYS, cpu.times.sys, { index });
 					});
-				} catch (err) {
+				} catch {
 					// silent
 				}
 			})
@@ -605,7 +497,7 @@ function updateCommonMetrics() {
 function getUserInfo() {
 	try {
 		return os.userInfo();
-	} catch (e) {
+	} catch {
 		/* istanbul ignore next */
 		return {};
 	}

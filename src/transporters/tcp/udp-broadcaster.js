@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -13,10 +13,17 @@ const ipaddr = require("ipaddr.js");
 const { randomInt } = require("../../../src/utils");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./udp-broadcaster")} UdpBroadcasterClass
+ */
+
+/**
  * UDP Discovery Server for TcpTransporter
  *
  * @class UdpServer
  * @extends {EventEmitter}
+ * @implements {UdpBroadcasterClass}
  */
 class UdpServer extends EventEmitter {
 	/**
@@ -99,8 +106,8 @@ class UdpServer extends EventEmitter {
 	 *
 	 * @param {String?} host
 	 * @param {Number?} port
-	 * @param {String?} multicastAddress
-	 * @param {Number?} ttl
+	 * @param {String=} multicastAddress
+	 * @param {Number=} ttl
 	 */
 	startServer(host, port, multicastAddress, ttl) {
 		return new this.Promise(resolve => {
@@ -117,14 +124,21 @@ class UdpServer extends EventEmitter {
 					resolve();
 				});
 
-				host = host || "0.0.0.0";
 				port = port || 4445;
 
-				server.bind({ port, host, exclusive: true }, () => {
+				/** @type {import("dgram").BindOptions} */
+				const bindOptions = { port, exclusive: true };
+				if (host && !multicastAddress) {
+					bindOptions.address = host;
+				}
+
+				server.bind(bindOptions, () => {
 					try {
 						if (multicastAddress) {
 							this.logger.info(
-								`UDP Multicast Server is listening on ${host}:${port}. Membership: ${multicastAddress}`
+								`UDP Multicast Server is listening on ${
+									host || "0.0.0.0"
+								}:${port}. Membership: ${multicastAddress}`
 							);
 							server.setMulticastInterface(host);
 							server.addMembership(multicastAddress, host);
@@ -169,7 +183,7 @@ class UdpServer extends EventEmitter {
 	 * @memberof UdpServer
 	 */
 	discover() {
-		if (this.servers.length == 0) return;
+		if (this.servers.length === 0) return;
 
 		this.counter++;
 
@@ -201,7 +215,7 @@ class UdpServer extends EventEmitter {
 	 * Incoming message handler
 	 *
 	 * @param {Buffer} data
-	 * @param {anyObject} rinfo
+	 * @param {Record<string, any>} rinfo
 	 * @returns
 	 * @memberof UdpServer
 	 */
@@ -211,7 +225,7 @@ class UdpServer extends EventEmitter {
 
 		try {
 			const parts = msg.split("|");
-			if (parts.length != 3) {
+			if (parts.length !== 3) {
 				this.logger.debug("Malformed UDP packet received", msg);
 				return;
 			}
@@ -230,12 +244,15 @@ class UdpServer extends EventEmitter {
 	 */
 	startDiscovering() {
 		if (!this.discoverTimer) {
-			this.discoverTimer = setInterval(() => {
-				this.discover();
+			this.discoverTimer = setInterval(
+				() => {
+					this.discover();
 
-				if (this.opts.udpMaxDiscovery && this.counter >= this.opts.udpMaxDiscovery)
-					this.stopDiscovering();
-			}, (this.opts.udpPeriod || 30) * 1000);
+					if (this.opts.udpMaxDiscovery && this.counter >= this.opts.udpMaxDiscovery)
+						this.stopDiscovering();
+				},
+				(this.opts.udpPeriod || 30) * 1000
+			);
 
 			this.discoverTimer.unref();
 

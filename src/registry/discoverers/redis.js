@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -19,18 +19,30 @@ const C = require("../../constants");
 let Redis;
 
 /**
+ * Import types
+ *
+ * @typedef {import("./redis")} RedisDiscovererClass
+ * @typedef {import("./redis").RedisDiscovererOptions} RedisDiscovererOptions
+ * @typedef {import("../node")} Node
+ */
+
+/**
  * Redis-based Discoverer class
  *
  * @class RedisDiscoverer
+ * @implements {RedisDiscovererClass}
  */
 class RedisDiscoverer extends BaseDiscoverer {
 	/**
 	 * Creates an instance of Discoverer.
 	 *
+	 * @param {string|RedisDiscovererOptions?} opts
 	 * @memberof RedisDiscoverer
 	 */
 	constructor(opts) {
-		if (typeof opts === "string") opts = { redis: opts };
+		if (typeof opts === "string") {
+			opts = { redis: opts };
+		}
 
 		super(opts);
 
@@ -186,11 +198,14 @@ class RedisDiscoverer extends BaseDiscoverer {
 	recreateInfoUpdateTimer() {
 		if (this.infoUpdateTimer) clearTimeout(this.infoUpdateTimer);
 
-		this.infoUpdateTimer = setTimeout(() => {
-			// Reset the INFO packet expiry.
-			this.client.expire(this.INFO_KEY, 60 * 60); // 60 mins
-			this.recreateInfoUpdateTimer();
-		}, 20 * 60 * 1000); // 20 mins
+		this.infoUpdateTimer = setTimeout(
+			() => {
+				// Reset the INFO packet expiry.
+				this.client.expire(this.INFO_KEY, 60 * 60); // 60 mins
+				this.recreateInfoUpdateTimer();
+			},
+			20 * 60 * 1000
+		); // 20 mins
 		this.infoUpdateTimer.unref();
 	}
 
@@ -275,11 +290,11 @@ class RedisDiscoverer extends BaseDiscoverer {
 
 			stream.on("error", err => reject(err));
 			stream.on("end", () => {
-				if (scannedKeys.length == 0) return resolve();
+				if (scannedKeys.length === 0) return resolve();
 
 				this.Promise.resolve()
 					.then(() => {
-						if (this.opts.fullCheck && ++this.idx % this.opts.fullCheck == 0) {
+						if (this.opts.fullCheck && ++this.idx % this.opts.fullCheck === 0) {
 							// Full check
 							//this.logger.debug("Full check", this.idx);
 							this.idx = 0;
@@ -345,6 +360,7 @@ class RedisDiscoverer extends BaseDiscoverer {
 	 * Discover a new or old node.
 	 *
 	 * @param {String} nodeID
+	 * @returns {Promise<Node | void>}
 	 */
 	discoverNode(nodeID) {
 		return this.client.getBuffer(`${this.PREFIX}-INFO:${nodeID}`).then(res => {
@@ -363,6 +379,7 @@ class RedisDiscoverer extends BaseDiscoverer {
 
 	/**
 	 * Discover all nodes (after connected)
+	 * @returns {Promise<Node[] | void>}
 	 */
 	discoverAllNodes() {
 		return this.collectOnlineNodes();
@@ -370,7 +387,8 @@ class RedisDiscoverer extends BaseDiscoverer {
 
 	/**
 	 * Local service registry has been changed. We should notify remote nodes.
-	 * @param {String} nodeID
+	 * @param {String=} nodeID
+	 * @returns {Promise<void>}
 	 */
 	sendLocalNodeInfo(nodeID) {
 		const info = this.broker.getLocalNodeInfo();

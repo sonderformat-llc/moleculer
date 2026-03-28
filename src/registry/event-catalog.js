@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -13,9 +13,25 @@ const EndpointList = require("./endpoint-list");
 const EventEndpoint = require("./endpoint-event");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./event-catalog")} EventCatalogClass
+ * @typedef {import("./event-catalog").EventCatalogListOptions} EventCatalogListOptions
+ * @typedef {import("./event-catalog").EventCatalogListResult} EventCatalogListResult
+ * @typedef {import("./registry")} Registry
+ * @typedef {import("./service-item")} ServiceItem
+ * @typedef {import("../service-broker")} ServiceBroker
+ * @typedef {import("../context")} Context
+ * @typedef {import("./node")} Node
+ * @typedef {import("../strategies/base")} BaseStrategy
+ * @typedef {import("../service").EventSchema} EventSchema
+ */
+
+/**
  * Catalog for events
  *
  * @class EventCatalog
+ * @implements {EventCatalogClass}
  */
 class EventCatalog {
 	/**
@@ -23,7 +39,7 @@ class EventCatalog {
 	 *
 	 * @param {Registry} registry
 	 * @param {ServiceBroker} broker
-	 * @param {any} StrategyFactory
+	 * @param {typeof import("../strategies/base")} StrategyFactory
 	 * @memberof EventCatalog
 	 */
 	constructor(registry, broker, StrategyFactory) {
@@ -32,6 +48,7 @@ class EventCatalog {
 		this.logger = registry.logger;
 		this.StrategyFactory = StrategyFactory;
 
+		/** @type EndpointList<EventEndpoint>[] */
 		this.events = [];
 
 		this.EndpointFactory = EventEndpoint;
@@ -42,8 +59,8 @@ class EventCatalog {
 	 *
 	 * @param {Node} node
 	 * @param {ServiceItem} service
-	 * @param {any} event
-	 * @returns
+	 * @param {EventSchema} event
+	 * @returns {EndpointList<EventEndpoint>}
 	 * @memberof EventCatalog
 	 */
 	add(node, service, event) {
@@ -67,6 +84,7 @@ class EventCatalog {
 				strategyFactory,
 				strategyOptions
 			);
+
 			this.events.push(list);
 		}
 
@@ -80,7 +98,7 @@ class EventCatalog {
 	 *
 	 * @param {String} eventName
 	 * @param {String} groupName
-	 * @returns
+	 * @returns {EndpointList<EventEndpoint>}
 	 * @memberof EventCatalog
 	 */
 	get(eventName, groupName) {
@@ -93,7 +111,7 @@ class EventCatalog {
 	 * @param {String} eventName
 	 * @param {String|Array?} groups
 	 * @param {Context} ctx
-	 * @returns
+	 * @returns {[EventEndpoint, string][]}
 	 * @memberof EventCatalog
 	 */
 	getBalancedEndpoints(eventName, groups, ctx) {
@@ -114,8 +132,8 @@ class EventCatalog {
 	/**
 	 * Get all groups for event
 	 *
-	 * @param {String} eventName
-	 * @returns Array<String>
+	 * @param {string} eventName
+	 * @returns {string[]}
 	 * @memberof EventCatalog
 	 */
 	getGroups(eventName) {
@@ -129,7 +147,7 @@ class EventCatalog {
 	 *
 	 * @param {String} eventName
 	 * @param {Array<String>?} groupNames
-	 * @returns
+	 * @returns {EventEndpoint[]}
 	 * @memberof EventCatalog
 	 */
 	getAllEndpoints(eventName, groupNames) {
@@ -153,11 +171,7 @@ class EventCatalog {
 	/**
 	 * Call local service handlers
 	 *
-	 * @param {String} eventName
-	 * @param {any} payload
-	 * @param {Array<String>?} groupNames
-	 * @param {String} nodeID
-	 * @param {boolean} broadcast
+	 * @param {Context} ctx
 	 * @returns {Promise<any>}
 	 *
 	 * @memberof EventCatalog
@@ -172,7 +186,7 @@ class EventCatalog {
 			if (!utils.match(ctx.eventName, list.name)) return;
 			if (
 				ctx.eventGroups == null ||
-				ctx.eventGroups.length == 0 ||
+				ctx.eventGroups.length === 0 ||
 				ctx.eventGroups.indexOf(list.group) !== -1
 			) {
 				if (isBroadcast) {
@@ -194,7 +208,12 @@ class EventCatalog {
 			}
 		});
 
-		return this.broker.Promise.all(promises);
+		return this.broker.Promise.allSettled(promises).then(results => {
+			const err = results.find(r => r.status == "rejected");
+			// @ts-ignore
+			if (err) return this.broker.Promise.reject(err.reason);
+			return true;
+		});
 	}
 
 	/**
@@ -205,6 +224,7 @@ class EventCatalog {
 	 * @memberof EventCatalog
 	 */
 	callEventHandler(ctx) {
+		// @ts-ignore
 		return ctx.endpoint.event.handler(ctx);
 	}
 
@@ -236,8 +256,8 @@ class EventCatalog {
 	/**
 	 * Get a filtered list of events
 	 *
-	 * @param {Object} {onlyLocal = false, onlyAvailable = false, skipInternal = false, withEndpoints = false}
-	 * @returns {Array}
+	 * @param {EventCatalogListOptions} opts
+	 * @returns {EventCatalogListResult[]}
 	 *
 	 * @memberof EventCatalog
 	 */
@@ -246,7 +266,7 @@ class EventCatalog {
 		onlyAvailable = false,
 		skipInternal = false,
 		withEndpoints = false
-	}) {
+	} = {}) {
 		let res = [];
 
 		this.events.forEach(list => {
@@ -267,7 +287,7 @@ class EventCatalog {
 			};
 
 			if (item.count > 0) {
-				const ep = list.endpoints[0];
+				const ep = /** @type {EventEndpoint} */ (list.endpoints[0]);
 				if (ep) item.event = _.omit(ep.event, ["handler", "remoteHandler", "service"]);
 			}
 

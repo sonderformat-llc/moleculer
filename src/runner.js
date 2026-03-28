@@ -1,21 +1,34 @@
 /* moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2025 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
 "use strict";
 
+/**
+ * Import types
+ *
+ * @typedef {import("./service")} Service
+ * @typedef {import("cluster").Cluster} Cluster
+ */
+
 const ServiceBroker = require("./service-broker");
 const utils = require("./utils");
 const fs = require("fs");
 const path = require("path");
-const glob = require("glob").sync;
+const { globSync } = require("glob");
 const inspect = require("util").inspect;
 const _ = require("lodash");
 const Args = require("args");
 const os = require("os");
+/** @type {Cluster} */
+// @ts-ignore
 const cluster = require("cluster");
 const kleur = require("kleur");
+
+/**
+ * Import types
+ */
 
 const stopSignals = [
 	"SIGHUP",
@@ -115,7 +128,7 @@ class MoleculerRunner {
 
 				if (this.flags.envfile) dotenv.config({ path: this.flags.envfile });
 				else dotenv.config();
-			} catch (err) {
+			} catch {
 				throw new Error(
 					"The 'dotenv' package is missing! Please install it with 'npm install dotenv --save' command."
 				);
@@ -185,6 +198,7 @@ class MoleculerRunner {
 		switch (ext) {
 			case ".json":
 			case ".js":
+			case ".cjs":
 			case ".ts": {
 				return Promise.resolve(require(filePath))
 					.then(content => {
@@ -215,7 +229,7 @@ class MoleculerRunner {
 
 		try {
 			return require.resolve(configPath, resolveOptions);
-		} catch (_) {
+		} catch {
 			return null;
 		}
 	}
@@ -260,7 +274,7 @@ class MoleculerRunner {
 							level
 								.split("_")
 								.map((value, index) => {
-									if (index == 0) {
+									if (index === 0) {
 										return value;
 									} else {
 										return value[0].toUpperCase() + value.substring(1);
@@ -319,7 +333,7 @@ class MoleculerRunner {
 	isDirectory(p) {
 		try {
 			return fs.lstatSync(p).isDirectory();
-		} catch (_) {
+		} catch {
 			// ignore
 		}
 		return false;
@@ -334,7 +348,7 @@ class MoleculerRunner {
 	isServiceFile(p) {
 		try {
 			return !fs.lstatSync(p).isDirectory();
-		} catch (_) {
+		} catch {
 			// ignore
 		}
 		return false;
@@ -404,8 +418,8 @@ class MoleculerRunner {
 							if (this.config.hotReload) {
 								this.watchFolders.push(svcPath);
 							}
-							files = glob(svcPath + "/" + fileMask, { absolute: true });
-							if (files.length == 0)
+							files = globSync(svcPath + "/" + fileMask, { absolute: true });
+							if (files.length === 0)
 								return this.broker.logger.warn(
 									kleur
 										.yellow()
@@ -419,8 +433,8 @@ class MoleculerRunner {
 							files = [svcPath.replace(/\\/g, "/") + ".service.js"];
 						} else {
 							// Load with glob
-							files = glob(p, { cwd: svcDir, absolute: true });
-							if (files.length == 0)
+							files = globSync(p, { cwd: svcDir, absolute: true });
+							if (files.length === 0)
 								this.broker.logger.warn(
 									kleur
 										.yellow()
@@ -539,7 +553,7 @@ class MoleculerRunner {
 			return this.broker
 				.stop()
 				.catch(err => {
-					logger.error("Error while stopping ServiceBroker", err);
+					logger.error(err);
 				})
 				.then(() => this._run());
 		} else {
@@ -547,15 +561,20 @@ class MoleculerRunner {
 		}
 	}
 
+	/**
+	 *
+	 * @param {string[]} args
+	 * @returns {Promise<void|ServiceBroker>}
+	 */
 	start(args) {
 		return Promise.resolve()
 			.then(() => this.processFlags(args))
 			.then(() => {
-				if (this.flags.instances !== undefined && cluster.isMaster) {
+				if (this.flags.instances !== undefined && cluster.isPrimary) {
 					return this.startWorkers(this.flags.instances);
+				} else {
+					return this._run();
 				}
-
-				return this._run();
 			});
 	}
 }

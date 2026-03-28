@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -9,7 +9,11 @@
 const { MoleculerClientError } = require("./errors");
 const utils = require("./utils");
 
+/**
+ * Internal service ($node.*)
+ */
 module.exports = function () {
+	/** @type {import("./service").ServiceSchema} */
 	const schema = {
 		name: "$node",
 

@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 "use strict";
 
 let _ = require("lodash");
@@ -15,7 +14,7 @@ let broker = new ServiceBroker({
 	namespace: "multi",
 	nodeID: process.argv[2] || "client-" + process.pid,
 	transporter,
-	//serializer: "ProtoBuf",
+	//serializer: "CBOR",
 	requestTimeout: 1000,
 
 	circuitBreaker: {

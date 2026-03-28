@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -10,7 +10,7 @@ const kleur = require("kleur");
 const os = require("os");
 const path = require("path");
 const fs = require("fs");
-const { ExtendableError } = require("./errors");
+const { TimeoutError } = require("./errors");
 
 const lut = [];
 for (let i = 0; i < 256; i++) {
@@ -32,14 +32,12 @@ const byteMultipliers = {
 // eslint-disable-next-line security/detect-unsafe-regex
 const parseByteStringRe = /^((-|\+)?(\d+(?:\.\d+)?)) *(kb|mb|gb|tb|pb)$/i;
 
-class TimeoutError extends ExtendableError {}
-
 /**
  * Circular replacing of unsafe properties in object
  *
- * @param {Object=} options List of options to change circularReplacer behaviour
- * @param {number=} options.maxSafeObjectSize Maximum size of objects for safe object converting
- * @return {function(...[*]=)}
+ * @param {object} options List of options to change circularReplacer behaviour
+ * @param {number?} [options.maxSafeObjectSize = Infinity] Maximum size of objects for safe object converting
+ * @return {(key: string, value: any) => any}
  */
 function circularReplacer(options = { maxSafeObjectSize: Infinity }) {
 	const seen = new WeakSet();
@@ -145,7 +143,7 @@ const utils = {
 	},
 
 	removeFromArray(arr, item) {
-		if (!arr || arr.length == 0) return arr;
+		if (!arr || arr.length === 0) return arr;
 		const idx = arr.indexOf(item);
 		if (idx !== -1) arr.splice(idx, 1);
 
@@ -172,7 +170,7 @@ const utils = {
 		const interfaces = os.networkInterfaces();
 		for (let iface in interfaces) {
 			for (let i in interfaces[iface]) {
-				const f = interfaces[iface][i];
+				const f = interfaces[iface]?.[i];
 				if (f.family === "IPv4") {
 					if (f.internal) {
 						ilist.push(f.address);
@@ -200,8 +198,7 @@ const utils = {
 	/**
 	 * Polyfill a Promise library with missing Bluebird features.
 	 *
-	 *
-	 * @param {PromiseClass} P
+	 * @param {typeof Promise} P
 	 */
 	polyfillPromise(P) {
 		if (!utils.isFunction(P.method)) {
@@ -221,7 +218,7 @@ const utils = {
 		if (!utils.isFunction(P.delay)) {
 			// Based on https://github.com/petkaantonov/bluebird/blob/master/src/timers.js#L15
 			P.delay = function (ms) {
-				return new P(resolve => setTimeout(resolve, +ms));
+				return new P(resolve => setTimeout(() => resolve(null), +ms));
 			};
 			P.prototype.delay = function (ms) {
 				return this.then(res => P.delay(ms).then(() => res));
@@ -230,12 +227,10 @@ const utils = {
 		}
 
 		if (!utils.isFunction(P.prototype.timeout)) {
-			P.TimeoutError = TimeoutError;
-
 			P.prototype.timeout = function (ms, message) {
 				let timer;
 				const timeout = new P((resolve, reject) => {
-					timer = setTimeout(() => reject(new P.TimeoutError(message)), +ms);
+					timer = setTimeout(() => reject(new TimeoutError(message)), +ms);
 				});
 
 				return P.race([timeout, this])
@@ -330,7 +325,7 @@ const utils = {
 			}
 
 			// Accept simple text, without point character (*)
-			if (len == 1 && firstStarPosition == 0) {
+			if (len == 1 && firstStarPosition === 0) {
 				return text.indexOf(".") == -1;
 			}
 
@@ -381,8 +376,8 @@ const utils = {
 	 * Remove circular references & Functions from the JS object
 	 *
 	 * @param {Object|Array} obj
-	 * @param {Object=} options List of options to change circularReplacer behaviour
-	 * @param {number=} options.maxSafeObjectSize List of options to change circularReplacer behaviour
+	 * @param {object} options List of options to change circularReplacer behaviour
+	 * @param {number?} [options.maxSafeObjectSize = Infinity] Maximum size of objects for safe object converting
 	 * @returns {Object|Array}
 	 */
 	safetyObject(obj, options) {
@@ -392,7 +387,7 @@ const utils = {
 	/**
 	 * Sets a variable on an object based on its dot path.
 	 *
-	 * @param {Object} obj
+	 * @param {Record<string,any>} obj
 	 * @param {String} path
 	 * @param {*} value
 	 * @returns {Object}
@@ -400,7 +395,7 @@ const utils = {
 	dotSet(obj, path, value) {
 		const parts = path.split(".");
 		const part = parts.shift();
-		if (parts.length > 0) {
+		if (part && parts.length > 0) {
 			if (!Object.prototype.hasOwnProperty.call(obj, part)) {
 				obj[part] = {};
 			} else if (obj[part] == null) {
@@ -435,8 +430,8 @@ const utils = {
 	 * Parse a byte string to number of bytes. E.g "1kb" -> 1024
 	 * Credits: https://github.com/visionmedia/bytes.js
 	 *
-	 * @param {String} v
-	 * @returns {Number}
+	 * @param {String|number} v
+	 * @returns {Number|null}
 	 */
 	parseByteString(v) {
 		if (typeof v === "number" && !isNaN(v)) {
@@ -450,7 +445,7 @@ const utils = {
 		// Test if the string passed is valid
 		let results = parseByteStringRe.exec(v);
 		let floatValue;
-		let unit = "b";
+		let unit;
 
 		if (!results) {
 			// Nothing could be extracted from the given string
@@ -471,7 +466,7 @@ const utils = {
 	 * Get the name of constructor of an object.
 	 *
 	 * @param {Object} obj
-	 * @returns {String}
+	 * @returns {String|undefined}
 	 */
 	getConstructorName(obj) {
 		if (obj == null) return undefined;
@@ -502,124 +497,6 @@ const utils = {
 		}
 
 		return false;
-	},
-
-	/**
-	 * Detects the argument names of a function.
-	 * Credits: https://github.com/sindresorhus/fn-args
-	 *
-	 * @param {Function} function_
-	 * @returns {Array<String>}
-	 */
-	functionArguments(function_) {
-		if (typeof function_ !== "function") {
-			throw new TypeError("Expected a function");
-		}
-
-		const commentRegex = /(\/\*([\s\S]*?)\*\/|([^:]|^)\/\/(.*)$)/gm;
-		const quotes = ["`", '"', "'"];
-
-		const functionSource = function_.toString().replace(commentRegex, ""); // Function with no comments
-
-		let functionWithNoDefaults = "";
-		let depth = 0; // () [] {}
-		let index = 0;
-
-		// To remove default values we can not use regexp because finite automaton can not handle such
-		// things as (potential) infinity-nested blocks (), [], {}
-
-		// Remove default values
-		for (; index < functionSource.length && functionSource.charAt(index) !== ")"; index += 1) {
-			// Exiting if an arrow occurs. Needed when arrow function without '()'.
-			if (functionSource.startsWith("=>", index)) {
-				functionWithNoDefaults = functionSource;
-				index = functionSource.length;
-				break;
-			}
-
-			// If we found a default value - skip it
-			if (functionSource.charAt(index) === "=") {
-				for (
-					;
-					index < functionSource.length &&
-					((functionSource.charAt(index) !== "," &&
-						functionSource.charAt(index) !== ")") ||
-						depth !== 0);
-					index += 1
-				) {
-					// Skip all quotes
-					let wasQuote = false;
-
-					for (const quote of quotes) {
-						if (functionSource.charAt(index) === quote) {
-							index += 1;
-
-							for (
-								;
-								index < functionSource.length &&
-								functionSource.charAt(index) !== quote;
-
-							) {
-								index += 1;
-							}
-
-							wasQuote = true;
-							break;
-						}
-					}
-
-					// If any quote type was skipped, start the cycle again
-					if (wasQuote) {
-						continue;
-					}
-
-					switch (
-						functionSource.charAt(index) // Keeps correct depths of all types of parenthesises
-					) {
-						case "(":
-						case "[":
-						case "{":
-							depth += 1;
-							break;
-						case ")":
-						case "]":
-						case "}":
-							depth -= 1;
-							break;
-						default:
-					}
-				}
-
-				if (functionSource.charAt(index) === ",") {
-					functionWithNoDefaults += ",";
-				}
-
-				if (functionSource.charAt(index) === ")") {
-					// Quits from the cycle immediately
-					functionWithNoDefaults += ")";
-					break;
-				}
-			} else {
-				functionWithNoDefaults += functionSource.charAt(index);
-			}
-		}
-
-		if (index < functionSource.length && functionSource.charAt(index) === ")") {
-			functionWithNoDefaults += ")";
-		}
-
-		// The first part matches parens-less arrow functions
-		// The second part matches the rest
-		const regexFnArguments = /^(?:async)?([^=()]+)=|\(([^)]+)\)/;
-
-		const match = regexFnArguments.exec(functionWithNoDefaults);
-
-		return match
-			? (match[1] || match[2])
-					.split(",")
-					.map(x => x.trim())
-					.filter(Boolean)
-			: [];
 	},
 
 	/**

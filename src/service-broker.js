@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2025 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -8,7 +8,7 @@
 
 const EventEmitter2 = require("eventemitter2").EventEmitter2;
 const _ = require("lodash");
-const glob = require("glob");
+const { globSync } = require("glob");
 const path = require("path");
 const { format } = require("util");
 
@@ -33,7 +33,29 @@ const { Tracer } = require("./tracing");
 const C = require("./constants");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./context")} Context
+ * @typedef {import("./registry/endpoint-action")} ActionEndpoint
+ * @typedef {import("./service")} Service
+ * @typedef {import("./service").ServiceSchema} ServiceSchema
+ * @typedef {import("./service").ServiceDependency} ServiceDependency
+ * @typedef {import("./service").ActionHandler} ActionHandler
+ * @typedef {import("./service-broker")} ServiceBrokerClass
+ * @typedef {import("./service-broker").BrokerOptions} BrokerOptions
+ * @typedef {import("./service-broker").CallingOptions} CallingOptions
+ * @typedef {import("./service-broker").NodeHealthStatus} NodeHealthStatus
+ * @typedef {import("./service-broker").MCallDefinition} MCallDefinition
+ * @typedef {import("./service-broker").MCallCallingOptions} MCallCallingOptions
+ * @typedef {import("./logger-factory").Logger} Logger
+ * @typedef {import("./registry").NodeRawInfo} NodeRawInfo
+ * @typedef {import("./registry/service-item")} ServiceItem
+ */
+
+/**
  * Default broker options
+ *
+ * @type {BrokerOptions}
  */
 const defaultOptions = {
 	namespace: "",
@@ -53,6 +75,7 @@ const defaultOptions = {
 		delay: 100,
 		maxDelay: 1000,
 		factor: 2,
+		// @ts-ignore
 		check: err => err && !!err.retryable
 	},
 
@@ -71,7 +94,8 @@ const defaultOptions = {
 	registry: {
 		strategy: "RoundRobin",
 		preferLocal: true,
-		stopDelay: 100
+		stopDelay: 100,
+		discoverer: "Local"
 	},
 
 	circuitBreaker: {
@@ -80,6 +104,7 @@ const defaultOptions = {
 		windowTime: 60,
 		minRequestCount: 20,
 		halfOpenTime: 10 * 1000,
+		// @ts-ignore
 		check: err => err && err.code >= 500
 	},
 
@@ -119,8 +144,7 @@ const defaultOptions = {
 
 	middlewares: null,
 
-	replCommands: null,
-	replDelimiter: null,
+	replOptions: null,
 
 	metadata: {},
 
@@ -161,12 +185,13 @@ const INTERNAL_MIDDLEWARES = [
  * Service broker class
  *
  * @class ServiceBroker
+ * @implements {ServiceBrokerClass}
  */
 class ServiceBroker {
 	/**
 	 * Creates an instance of ServiceBroker.
 	 *
-	 * @param {Object} options
+	 * @param {BrokerOptions} options
 	 *
 	 * @memberof ServiceBroker
 	 */
@@ -182,7 +207,6 @@ class ServiceBroker {
 				this.Promise = Promise;
 			}
 			utils.polyfillPromise(this.Promise);
-			ServiceBroker.Promise = this.Promise;
 
 			// Broker started flag
 			this.started = false;
@@ -234,7 +258,7 @@ class ServiceBroker {
 
 			// Metrics Registry
 			this.metrics = new MetricRegistry(this, this.options.metrics);
-			this.metrics.init();
+			this.metrics.init(this);
 			this.registerMoleculerMetrics();
 
 			// Middleware handler
@@ -315,7 +339,7 @@ class ServiceBroker {
 				);
 			}
 
-			this.registry.init(this);
+			this.registry.init();
 
 			// Register internal actions
 			if (this.options.internalServices)
@@ -355,6 +379,7 @@ class ServiceBroker {
 	/**
 	 * Register middlewares (user & internal)
 	 *
+	 * @param {MiddlewareHandler.Middleware[]} userMiddlewares
 	 * @memberof ServiceBroker
 	 */
 	registerMiddlewares(userMiddlewares) {
@@ -620,7 +645,7 @@ class ServiceBroker {
 	 *
 	 * @example
 	 * broker.start().then(() => broker.repl());
-	 * @returns {object}
+	 * @returns
 	 */
 	repl() {
 		let repl;
@@ -639,12 +664,7 @@ class ServiceBroker {
 		}
 
 		if (repl) {
-			let opts = null;
-			const delimiter = this.options.replDelimiter;
-			const customCommands = this.options.replCommands;
-			delimiter && (opts = { delimiter });
-			customCommands && (opts = { ...opts, customCommands });
-			return repl(this, opts);
+			return repl(this, this.options.replOptions);
 		}
 	}
 
@@ -667,11 +687,11 @@ class ServiceBroker {
 	/**
 	 * Wrap a method with middlewares
 	 *
-	 * @param {string} method
+	 * @param {string} name
 	 * @param {Function} handler
-	 * @param {any} bindTo
-	 * @param {Object} opts
-	 * @returns {Function}
+	 * @param {any=} bindTo
+	 * @param {Object=} opts
+	 * @returns {any}
 	 *
 	 * @memberof ServiceBroker
 	 */
@@ -682,9 +702,9 @@ class ServiceBroker {
 	/**
 	 * Call a handler asynchronously in all middlewares
 	 *
-	 * @param {String} method
+	 * @param {String} name
 	 * @param {Array<any>} args
-	 * @param {Object} opts
+	 * @param {Object=} opts
 	 * @returns {Promise}
 	 *
 	 * @memberof ServiceBroker
@@ -696,9 +716,9 @@ class ServiceBroker {
 	/**
 	 * Call a handler synchronously in all middlewares
 	 *
-	 * @param {String} method
+	 * @param {String} name
 	 * @param {Array<any>} args
-	 * @param {Object} opts
+	 * @param {Object=} opts
 	 * @returns
 	 *
 	 * @memberof ServiceBroker
@@ -731,8 +751,8 @@ class ServiceBroker {
 	 * Get a custom logger for sub-modules (service, transporter, cacher, context...etc)
 	 *
 	 * @param {String} mod	Name of module
-	 * @param {Object} props	Module properties (service name, version, ...etc
-	 * @returns {ModuleLogger}
+	 * @param {Record<string, any>=} props	Module properties (service name, version, ...etc
+	 * @returns {Logger}
 	 *
 	 * @memberof ServiceBroker
 	 */
@@ -753,8 +773,8 @@ class ServiceBroker {
 	 * Fatal error. Print the message to console and exit the process (if need)
 	 *
 	 * @param {String} message
-	 * @param {Error?} err
-	 * @param {boolean} [needExit=true]
+	 * @param {Error=} err
+	 * @param {boolean=} [needExit=true]
 	 *
 	 * @memberof ServiceBroker
 	 */
@@ -780,7 +800,7 @@ class ServiceBroker {
 		let serviceFiles;
 
 		if (Array.isArray(fileMask)) serviceFiles = fileMask.map(f => path.join(folder, f));
-		else serviceFiles = glob.sync(path.join(folder, fileMask));
+		else serviceFiles = globSync(folder + "/" + fileMask);
 
 		if (serviceFiles) serviceFiles.forEach(filename => this.loadService(filename));
 
@@ -790,8 +810,8 @@ class ServiceBroker {
 	/**
 	 * Load a service from file
 	 *
-	 * @param {string} 		Path of service
-	 * @returns	{Service}	Loaded service
+	 * @param {string} filePath
+	 * @returns	{Service}
 	 *
 	 * @memberof ServiceBroker
 	 */
@@ -809,6 +829,7 @@ class ServiceBroker {
 			schema = this.normalizeSchemaConstructor(schema);
 			if (utils.isInheritedClass(schema, this.ServiceFactory)) {
 				// Service implementation
+				// @ts-ignore
 				svc = new schema(this);
 
 				// If broker is started, call the started lifecycle event of service
@@ -846,17 +867,19 @@ class ServiceBroker {
 	/**
 	 * Create a new service by schema
 	 *
-	 * @param {any} schema	Schema of service or a Service class
-	 * @param {any=} schemaMods	Modified schema
+	 * @param {ServiceSchema} schema	Schema of service or a Service class
+	 * @param {ServiceSchema=} schemaMods	Modified schema
 	 * @returns {Service}
 	 *
 	 * @memberof ServiceBroker
 	 */
 	createService(schema, schemaMods) {
+		/** @type {Service} */
 		let service;
 
 		schema = this.normalizeSchemaConstructor(schema);
 		if (Object.prototype.isPrototypeOf.call(this.ServiceFactory, schema)) {
+			// @ts-ignore
 			service = new schema(this, schemaMods);
 		} else {
 			service = new this.ServiceFactory(this, schema, schemaMods);
@@ -874,7 +897,6 @@ class ServiceBroker {
 	 * @param {Service} service
 	 * @returns {Promise}
 	 * @memberof ServiceBroker
-	 * @private
 	 */
 	_restartService(service) {
 		return service._start.call(service).catch(err => {
@@ -902,7 +924,7 @@ class ServiceBroker {
 	/**
 	 * Register a local service to Service Registry
 	 *
-	 * @param {Object} registryItem
+	 * @param {ServiceItem} registryItem
 	 * @memberof ServiceBroker
 	 */
 	registerLocalService(registryItem) {
@@ -914,33 +936,37 @@ class ServiceBroker {
 	/**
 	 * Destroy a local service
 	 *
-	 * @param {Service|string|object} service
+	 * @param {Service|string|ServiceDependency} service
 	 * @returns Promise<void>
 	 * @memberof ServiceBroker
 	 */
 	destroyService(service) {
 		let serviceName;
 		let serviceVersion;
+		/** @type {Service} */
+		let svc;
 		if (utils.isString(service)) {
 			serviceName = service;
-			service = this.getLocalService(service);
+			svc = this.getLocalService(service);
 		} else if (utils.isPlainObject(service)) {
 			serviceName = service.name;
 			serviceVersion = service.version;
-			service = this.getLocalService(service.name, service.version);
+			svc = this.getLocalService(service);
+		} else {
+			svc = service;
 		}
 
-		if (!service) {
+		if (!svc) {
 			return this.Promise.reject(
 				new E.ServiceNotFoundError({ service: serviceName, version: serviceVersion })
 			);
 		}
 
 		return this.Promise.resolve()
-			.then(() => service._stop())
+			.then(() => svc._stop())
 			.catch(err => {
 				/* istanbul ignore next */
-				this.logger.error(`Unable to stop '${service.fullName}' service.`, err);
+				this.logger.error(`Unable to stop '${svc.fullName}' service.`, err);
 
 				this.broadcastLocal("$broker.error", {
 					error: err,
@@ -949,10 +975,10 @@ class ServiceBroker {
 				});
 			})
 			.then(() => {
-				utils.removeFromArray(this.services, service);
-				this.registry.unregisterService(service.fullName, this.nodeID);
+				utils.removeFromArray(this.services, svc);
+				this.registry.unregisterService(svc.fullName, this.nodeID);
 
-				this.logger.info(`Service '${service.fullName}' is stopped.`);
+				this.logger.info(`Service '${svc.fullName}' is stopped.`);
 				this.servicesChanged(true);
 
 				this.metrics.set(
@@ -987,24 +1013,24 @@ class ServiceBroker {
 
 	/**
 	 * Register internal services
-	 * @param {Object?} opts
+	 * @param {Partial<ServiceSchema>?} opts
 	 *
 	 * @memberof ServiceBroker
 	 */
 	registerInternalServices(opts) {
 		opts = utils.isObject(opts) ? opts : {};
-		const internalsSchema = require("./internals")(this);
-		let definitiveSchema = {};
+		/** @type {import("./service").ServiceSchema} */
+		const internalsSchema = require("./internals")();
 		// If it's present any custom definition, define it as the root schema and the default one as a mixin
 		if (opts["$node"]) {
-			definitiveSchema = opts["$node"];
+			const definitiveSchema = opts["$node"];
 			if (!definitiveSchema.mixins) definitiveSchema.mixins = [];
 			definitiveSchema.mixins.push(internalsSchema);
+			this.createService(definitiveSchema);
 		} else {
 			// Otherwise, just use the default one
-			definitiveSchema = internalsSchema;
+			this.createService(internalsSchema);
 		}
-		this.createService(definitiveSchema);
 	}
 
 	/**
@@ -1014,42 +1040,36 @@ class ServiceBroker {
 	 * 	getLocalService("v2.posts");
 	 * 	getLocalService({ name: "posts", version: 2 });
 	 *
-	 * @param {String|ServiceSearchObj} name
-	 * @param {String|Number?} version
+	 * @param {String|ServiceDependency} name
 	 * @returns {Service}
 	 *
 	 * @memberof ServiceBroker
 	 */
-	getLocalService(name, version) {
-		if (arguments.length == 1) {
-			if (utils.isString(name))
-				return this.services.find(service => service.fullName == name);
-			else if (utils.isPlainObject(name))
-				return this.services.find(
-					service => service.name == name.name && service.version == name.version
-				);
-		}
-		// Deprecated
-		return this.services.find(service => service.name == name && service.version == version);
+	getLocalService(name) {
+		if (utils.isString(name)) return this.services.find(service => service.fullName == name);
+		else if (utils.isPlainObject(name))
+			return this.services.find(
+				service => service.name == name.name && service.version == name.version
+			);
 	}
 
 	/**
 	 * Wait for other services
 	 *
-	 * @param {String|Array<String>} serviceNames
-	 * @param {Number} timeout Timeout in milliseconds
-	 * @param {Number} interval Check interval in milliseconds
+	 * @param {String|Array<String>|ServiceDependency|Array<ServiceDependency>} service
+	 * @param {Number=} timeout Timeout in milliseconds
+	 * @param {Number=} interval Check interval in milliseconds
 	 * @returns {Promise}
 	 *
 	 * @memberof ServiceBroker
 	 */
 	waitForServices(
-		serviceNames,
+		service,
 		timeout = this.options.dependencyTimeout,
 		interval = this.options.dependencyInterval,
 		logger = this.logger
 	) {
-		if (!Array.isArray(serviceNames)) serviceNames = [serviceNames];
+		let serviceNames = Array.isArray(service) ? service : [service];
 
 		serviceNames = utils.uniq(
 			_.compact(
@@ -1069,7 +1089,7 @@ class ServiceBroker {
 			)
 		);
 
-		if (serviceNames.length == 0) return this.Promise.resolve({ services: [], statuses: [] });
+		if (serviceNames.length === 0) return this.Promise.resolve({ services: [], statuses: [] });
 
 		logger.info(
 			`Waiting for service(s) '${serviceNames
@@ -1141,10 +1161,10 @@ class ServiceBroker {
 	/**
 	 * Find the next available endpoint for action
 	 *
-	 * @param {String} actionName
+	 * @param {String |ActionEndpoint} actionName
 	 * @param {Object?} opts
 	 * @param {Context?} ctx
-	 * @returns {Endpoint|Error}
+	 * @returns {ActionEndpoint|E.MoleculerRetryableError}
 	 *
 	 * @performance-critical
 	 * @memberof ServiceBroker
@@ -1185,9 +1205,9 @@ class ServiceBroker {
 	/**
 	 * Call an action
 	 *
-	 * @param {String} actionName	name of action
-	 * @param {Object?} params		params of action
-	 * @param {Object?} opts		options of call (optional)
+	 * @param {String} actionName		name of action
+	 * @param {Object=} params			params of action
+	 * @param {CallingOptions=} opts	options of call (optional)
 	 * @returns {Promise}
 	 *
 	 * @performance-critical
@@ -1226,17 +1246,23 @@ class ServiceBroker {
 			ctx.setEndpoint(endpoint);
 		}
 
-		if (ctx.endpoint.local)
+		if (ctx.endpoint.local) {
 			this.logger.debug("Call action locally.", {
 				action: ctx.action.name,
 				requestID: ctx.requestID
 			});
-		else
+
+			// Stream redirection
+			if (opts.stream) {
+				ctx.stream = opts.stream;
+			}
+		} else {
 			this.logger.debug("Call action on remote node.", {
 				action: ctx.action.name,
 				nodeID: ctx.nodeID,
 				requestID: ctx.requestID
 			});
+		}
 
 		//this.setCurrentContext(ctx);
 
@@ -1255,18 +1281,18 @@ class ServiceBroker {
 	 * built-in balancer with the "disableBalancer" option.
 	 *
 	 * @param {String} actionName	name of action
-	 * @param {Object?} params		params of action
-	 * @param {Object?} opts 		options of call (optional)
+	 * @param {Object=} params		params of action
+	 * @param {Object=} opts 		options of call (optional)
 	 * @returns {Promise}
 	 *
-	 * @private
 	 * @memberof ServiceBroker
 	 */
 	callWithoutBalancer(actionName, params, opts = {}) {
 		if (params === undefined) params = {}; // Backward compatibility
 
 		let nodeID = null;
-		let endpoint = null;
+		/** @type {ActionEndpoint} */
+		let endpoint;
 		if (typeof actionName !== "string") {
 			endpoint = actionName;
 			actionName = endpoint.action.name;
@@ -1331,6 +1357,12 @@ class ServiceBroker {
 		return p;
 	}
 
+	/**
+	 *
+	 * @param {string} actionName
+	 * @param {Context=} ctx
+	 * @returns
+	 */
 	_getLocalActionEndpoint(actionName, ctx) {
 		// Find action by name
 		let epList = this.registry.getActionEndpoints(actionName);
@@ -1350,49 +1382,40 @@ class ServiceBroker {
 	}
 
 	/**
+	 * @overload
+	 * @param {Record<string, MCallDefinition>} def
+	 * @param {MCallCallingOptions=} opts
+	 * @returns {Promise<Record<string, TResult>>}
+	 */
+	/**
+	 * @overload
+	 * @param {MCallDefinition[]} def
+	 * @param {MCallCallingOptions=} opts
+	 * @returns {Promise<TResult[]>}
+	 */
+	/**
 	 * Multiple action calls.
 	 *
-	 * @param {Array<Object>|Object} def Calling definitions.
-	 * @param {Object} opts Calling options for each call.
-	 * @returns {Promise<Array<Object>|Object>|PromiseSettledResult}
-	 *
-	 * @example
-	 * Call `mcall` with an array:
-	 * ```js
-	 * broker.mcall([
-	 * 	{ action: "posts.find", params: { limit: 5, offset: 0 } },
-	 * 	{ action: "users.find", params: { limit: 5, sort: "username" }, opts: { timeout: 500 } }
-	 * ]).then(results => {
-	 * 	let posts = results[0];
-	 * 	let users = results[1];
-	 * })
-	 * ```
-	 *
-	 * @example
-	 * Call `mcall` with an Object:
-	 * ```js
-	 * broker.mcall({
-	 * 	posts: { action: "posts.find", params: { limit: 5, offset: 0 } },
-	 * 	users: { action: "users.find", params: { limit: 5, sort: "username" }, opts: { timeout: 500 } }
-	 * }).then(results => {
-	 * 	let posts = results.posts;
-	 * 	let users = results.users;
-	 * })
-	 * ```
-	 * @throws MoleculerServerError - If the `def` is not an `Array` and not an `Object`.
+	 * @template TResult
+	 * @param {Record<string, MCallDefinition>|MCallDefinition[]} def
+	 * @param {MCallCallingOptions=} opts
+	 * @returns {Promise<Record<string, TResult> | TResult[]>}
 	 * @memberof ServiceBroker
 	 */
 	mcall(def, opts = {}) {
 		const { settled, ...options } = opts;
 		if (Array.isArray(def)) {
-			return utils.promiseAllControl(
-				def.map(item => this.call(item.action, item.params, item.options || options)),
-				settled,
-				this.Promise
+			return /** @type {Promise<TResult[]>} */ (
+				utils.promiseAllControl(
+					def.map(item => this.call(item.action, item.params, item.options || options)),
+					settled,
+					this.Promise
+				)
 			);
 		} else if (utils.isObject(def)) {
-			let results = {};
-			let promises = Object.keys(def).map(name => {
+			/** @type {Record<string, TResult>} */
+			const results = {};
+			const promises = Object.keys(def).map(name => {
 				const item = def[name];
 				const callOptions = item.options || options;
 				return this.call(item.action, item.params, callOptions).then(
@@ -1400,9 +1423,10 @@ class ServiceBroker {
 				);
 			});
 
-			let p = utils.promiseAllControl(promises, settled, this.Promise);
+			const p = utils.promiseAllControl(promises, settled, this.Promise);
 
 			// Pointer to Context
+			// @ts-ignore
 			p.ctx = promises.map(promise => promise.ctx);
 
 			return p.then(() => results);
@@ -1417,8 +1441,8 @@ class ServiceBroker {
 	 * Emit an event (grouped & balanced global event)
 	 *
 	 * @param {string} eventName
-	 * @param {any?} payload
-	 * @param {Object?} opts
+	 * @param {any=} payload
+	 * @param {Object=} opts
 	 * @returns {Promise<any>}
 	 *
 	 * @memberof ServiceBroker
@@ -1459,7 +1483,12 @@ class ServiceBroker {
 				if (ep.id === this.nodeID) {
 					// Local service, call handler
 					const newCtx = ctx.copy(ep);
-					promises.push(this.registry.events.callEventHandler(newCtx));
+					promises.push(
+						this.registry.events.callEventHandler(newCtx).catch(err => {
+							// Catch and log the error because it's a local event handler, not throwing further.
+							this.logger.error(err);
+						})
+					);
 				} else {
 					// Remote service
 					const e = groupedEP[ep.id];
@@ -1480,8 +1509,6 @@ class ServiceBroker {
 					promises.push(this.transit.sendEvent(newCtx));
 				});
 			}
-
-			return this.Promise.all(promises);
 		} else if (this.transit) {
 			// Disabled balancer case
 			let groups = opts.groups;
@@ -1491,19 +1518,32 @@ class ServiceBroker {
 				groups = this.getEventGroups(eventName);
 			}
 
-			if (groups.length === 0) return this.Promise.resolve();
+			if (groups.length === 0) return this.Promise.resolve(true);
 
 			ctx.eventGroups = groups;
-			return this.transit.sendEvent(ctx);
+			promises.push(this.transit.sendEvent(ctx));
 		}
+
+		const p = this.Promise.allSettled(promises).then(results => {
+			const err = results.find(r => r.status == "rejected");
+			if (err) return this.Promise.reject(err.reason);
+			return true;
+		});
+
+		if (opts.throwError) {
+			return p;
+		}
+		return p.catch(() => {
+			// swallow the error. It's already logged.
+		});
 	}
 
 	/**
 	 * Broadcast an event for all local & remote services
 	 *
 	 * @param {string} eventName
-	 * @param {any?} payload
-	 * @param {Object?} opts
+	 * @param {any=} payload
+	 * @param {Object=} opts
 	 * @returns {Promise}
 	 *
 	 * @memberof ServiceBroker
@@ -1542,38 +1582,49 @@ class ServiceBroker {
 				// Disabled balancer case
 				let groups = opts.groups;
 
-				if (!groups || groups.length == 0) {
+				if (!groups || groups.length === 0) {
 					// Apply to all groups
 					groups = this.getEventGroups(eventName);
 				}
 
-				if (groups.length == 0) return; // Return here because balancer disabled, so we can't call the local services.
+				if (groups.length === 0) return; // Return here because balancer disabled, so we can't call the local services.
 
 				const endpoints = this.registry.events.getAllEndpoints(eventName, groups);
 
 				// Return here because balancer disabled, so we can't call the local services.
-				return this.Promise.all(
-					endpoints.map(ep => {
-						const newCtx = ctx.copy(ep);
-						newCtx.eventGroups = groups;
-						return this.transit.sendEvent(newCtx);
-					})
-				);
+				endpoints.forEach(ep => {
+					const newCtx = ctx.copy(ep);
+					newCtx.eventGroups = groups;
+					promises.push(this.transit.sendEvent(newCtx));
+				});
 			}
 		}
 
-		// Send to local services
-		promises.push(this.broadcastLocal(eventName, payload, opts));
+		if (!this.options.disableBalancer) {
+			// Send to local services
+			promises.push(this.broadcastLocal(eventName, payload, opts));
+		}
 
-		return this.Promise.all(promises);
+		const p = this.Promise.allSettled(promises).then(results => {
+			const err = results.find(r => r.status == "rejected");
+			if (err) return this.Promise.reject(err.reason);
+			return true;
+		});
+
+		if (opts.throwError) {
+			return p;
+		}
+		return p.catch(() => {
+			// swallow the error. It's already logged.
+		});
 	}
 
 	/**
 	 * Broadcast an event for all local services
 	 *
 	 * @param {string} eventName
-	 * @param {any?} payload
-	 * @param {Object?} groups
+	 * @param {any=} payload
+	 * @param {Object=} opts
 	 * @returns
 	 *
 	 * @memberof ServiceBroker
@@ -1598,7 +1649,16 @@ class ServiceBroker {
 		ctx.eventType = "broadcastLocal";
 		ctx.eventGroups = opts.groups;
 
-		return this.emitLocalServices(ctx);
+		const p = this.emitLocalServices(ctx);
+
+		if (opts.throwError) {
+			return p;
+		}
+
+		return p.catch(err => {
+			// Catch and log the error because it's a local event handler, not throwing further.
+			this.logger.error(err);
+		});
 	}
 
 	/**
@@ -1655,7 +1715,7 @@ class ServiceBroker {
 						pongs[pong.nodeID] = pong;
 						processing.delete(pong.nodeID);
 
-						if (processing.size == 0) {
+						if (processing.size === 0) {
 							clearTimeout(timer);
 							this.localBus.off("$node.pong", handler);
 							resolve(pongs);
@@ -1675,17 +1735,17 @@ class ServiceBroker {
 	/**
 	 * Get local node health status
 	 *
-	 * @returns {Promise}
+	 * @returns {NodeHealthStatus}
 	 * @memberof ServiceBroker
 	 */
 	getHealthStatus() {
-		return H.getHealthStatus(this);
+		return H.getHealthStatus();
 	}
 
 	/**
 	 * Get local node info.
 	 *
-	 * @returns
+	 * @returns {NodeRawInfo}
 	 * @memberof ServiceBroker
 	 */
 	getLocalNodeInfo() {
@@ -1786,8 +1846,8 @@ class ServiceBroker {
 	/**
 	 * Ensure the service schema will be prototype of ServiceFactory;
 	 *
-	 * @param {any} schema
-	 * @returns {string}
+	 * @param {ServiceSchema} schema
+	 * @returns {ServiceSchema}
 	 *
 	 */
 	normalizeSchemaConstructor(schema) {
@@ -1830,7 +1890,7 @@ ServiceBroker.prototype.MOLECULER_VERSION = ServiceBroker.MOLECULER_VERSION;
 /**
  * Version of Protocol
  */
-ServiceBroker.PROTOCOL_VERSION = "4";
+ServiceBroker.PROTOCOL_VERSION = "5";
 ServiceBroker.prototype.PROTOCOL_VERSION = ServiceBroker.PROTOCOL_VERSION;
 
 /**

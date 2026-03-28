@@ -1,4 +1,3 @@
-/*eslint-disable no-console */
 "use strict";
 
 const kleur = require("kleur");
@@ -44,9 +43,6 @@ jest.mock("../../src/utils", () => ({
 	polyfillPromise(p) {
 		return polyfillPromise(p);
 	},
-	functionArguments() {
-		return ["ctx"];
-	},
 	deprecate() {},
 	uniq(arr) {
 		return [...new Set(arr)];
@@ -89,7 +85,14 @@ const {
 
 jest.spyOn(Registry.prototype, "init");
 
+/**
+ * Import types
+ *
+ * @typedef {import("../src/service-broker")} ServiceBroker
+ */
+
 describe("Test ServiceBroker constructor", () => {
+	/** @type {ServiceBroker} */
 	let broker;
 
 	afterEach(async () => {
@@ -105,7 +108,6 @@ describe("Test ServiceBroker constructor", () => {
 		expect(broker.options).toEqual(ServiceBroker.defaultOptions);
 
 		expect(broker.Promise).toBe(Promise);
-		expect(ServiceBroker.Promise).toBe(Promise);
 
 		expect(broker.ServiceFactory).toBe(Service);
 		expect(broker.ContextFactory).toBe(Context);
@@ -130,7 +132,7 @@ describe("Test ServiceBroker constructor", () => {
 
 		expect(broker.registry).toBeInstanceOf(Registry);
 		expect(broker.registry.init).toBeCalledTimes(1);
-		expect(broker.registry.init).toBeCalledWith(broker);
+		expect(broker.registry.init).toBeCalledWith();
 
 		expect(broker.middlewares).toBeInstanceOf(MiddlewareHandler);
 
@@ -244,7 +246,8 @@ describe("Test ServiceBroker constructor", () => {
 			registry: {
 				strategy: Strategies.Random,
 				preferLocal: false,
-				stopDelay: 100
+				stopDelay: 100,
+				discoverer: "Local"
 			},
 
 			circuitBreaker: {
@@ -291,8 +294,7 @@ describe("Test ServiceBroker constructor", () => {
 			dependencyTimeout: 0,
 			hotReload: true,
 			middlewares: null,
-			replCommands: null,
-			replDelimiter: null,
+			replOptions: null,
 			metadata: {
 				region: "eu-west1"
 			},
@@ -1005,23 +1007,27 @@ describe("Test broker.repl", () => {
 		repl.mockClear();
 		let broker = new ServiceBroker({
 			logger: false,
-			replCommands: []
+			replOptions: {
+				customCommands: []
+			}
 		});
 		broker.repl();
 
 		expect(repl).toHaveBeenCalledTimes(1);
-		expect(repl).toHaveBeenCalledWith(broker, { customCommands: broker.options.replCommands });
+		expect(repl).toHaveBeenCalledWith(broker, { customCommands: [] });
 	});
 	it("should switch to repl mode with delimiter", () => {
 		repl.mockClear();
 		let broker = new ServiceBroker({
 			logger: false,
-			replDelimiter: "mol # "
+			replOptions: {
+				delimiter: "mol # "
+			}
 		});
 		broker.repl();
 
 		expect(repl).toHaveBeenCalledTimes(1);
-		expect(repl).toHaveBeenCalledWith(broker, { delimiter: broker.options.replDelimiter });
+		expect(repl).toHaveBeenCalledWith(broker, { delimiter: "mol # " });
 	});
 });
 
@@ -1229,15 +1235,25 @@ describe("Test loadServices", () => {
 	const broker = new ServiceBroker({ logger: false });
 	broker.loadService = jest.fn();
 
-	it("should load 5 services", () => {
+	it("should load 5 services ", () => {
 		const count = broker.loadServices("./test/services");
 		expect(count).toBe(5);
 		expect(broker.loadService).toHaveBeenCalledTimes(5);
-		expect(broker.loadService).toHaveBeenCalledWith("test/services/users.service.js");
-		expect(broker.loadService).toHaveBeenCalledWith("test/services/posts.service.js");
-		expect(broker.loadService).toHaveBeenCalledWith("test/services/math.service.js");
-		expect(broker.loadService).toHaveBeenCalledWith("test/services/utils/util.service.js");
-		expect(broker.loadService).toHaveBeenCalledWith("test/services/greeter.es6.service.js");
+		expect(broker.loadService).toHaveBeenCalledWith(
+			path.normalize("test/services/users.service.js")
+		);
+		expect(broker.loadService).toHaveBeenCalledWith(
+			path.normalize("test/services/posts.service.js")
+		);
+		expect(broker.loadService).toHaveBeenCalledWith(
+			path.normalize("test/services/math.service.js")
+		);
+		expect(broker.loadService).toHaveBeenCalledWith(
+			path.normalize("test/services/utils/util.service.js")
+		);
+		expect(broker.loadService).toHaveBeenCalledWith(
+			path.normalize("test/services/greeter.es6.service.js")
+		);
 	});
 
 	it("should load 1 services", () => {
@@ -1245,7 +1261,9 @@ describe("Test loadServices", () => {
 		const count = broker.loadServices("./test/services", "users.*.js");
 		expect(count).toBe(1);
 		expect(broker.loadService).toHaveBeenCalledTimes(1);
-		expect(broker.loadService).toHaveBeenCalledWith("test/services/users.service.js");
+		expect(broker.loadService).toHaveBeenCalledWith(
+			path.normalize("test/services/users.service.js")
+		);
 	});
 
 	it("should load 0 services", () => {
@@ -1261,10 +1279,10 @@ describe("Test loadServices", () => {
 		expect(count).toBe(2);
 		expect(broker.loadService).toHaveBeenCalledTimes(2);
 		expect(broker.loadService).toHaveBeenCalledWith(
-			path.join("test", "services", "users.service")
+			path.normalize("test/services/users.service")
 		);
 		expect(broker.loadService).toHaveBeenCalledWith(
-			path.join("test", "services", "math.service")
+			path.normalize("test/services/math.service")
 		);
 	});
 });
@@ -1407,26 +1425,6 @@ describe("Test broker.createService", () => {
 
 		broker.createService(schema);
 		expect(broker.ServiceFactory.prototype.mergeSchemas).toHaveBeenCalledTimes(0);
-	});
-
-	it("should call mergeSchema if give schema mods param", () => {
-		const broker = new ServiceBroker({ logger: false });
-		broker.ServiceFactory.prototype.mergeSchemas = jest.fn(schema => schema);
-		const schema = {
-			name: "test",
-			actions: {
-				empty() {}
-			}
-		};
-
-		const mods = {
-			name: "other",
-			version: 2
-		};
-
-		broker.createService(schema, mods);
-		expect(broker.ServiceFactory.prototype.mergeSchemas).toHaveBeenCalledTimes(1);
-		expect(broker.ServiceFactory.prototype.mergeSchemas).toHaveBeenCalledWith(schema, mods);
 	});
 
 	it("should load es6 class service", () => {
@@ -1902,11 +1900,6 @@ describe("Test broker.getLocalService", () => {
 			expect(broker.getLocalService({ name: "posts" })).toBeUndefined();
 			expect(broker.getLocalService({ name: "posts", version: 1 })).toBe(service1);
 			expect(broker.getLocalService({ name: "posts", version: 2 })).toBe(service2);
-		});
-
-		it("should find the service by name & version (deprecated)", () => {
-			expect(broker.getLocalService("posts", 2)).toBe(service2);
-			expect(broker.getLocalService("posts", 1)).toBe(service1);
 		});
 	});
 });
@@ -2903,7 +2896,7 @@ describe("Test broker.emit", () => {
 		]
 	]);
 	broker.localBus.emit = jest.fn();
-	broker.registry.events.callEventHandler = jest.fn();
+	broker.registry.events.callEventHandler = jest.fn(() => Promise.resolve());
 
 	it("should call the local handler", () => {
 		expect(broker.transit).toBeUndefined();
@@ -2932,6 +2925,8 @@ describe("Test broker.emit", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1234",
 			options: {},
@@ -2963,6 +2958,8 @@ describe("Test broker.emit", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1234",
 			options: {},
@@ -3003,6 +3000,8 @@ describe("Test broker.emit", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1234",
 			options: {},
@@ -3047,6 +3046,8 @@ describe("Test broker.emit", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1234",
 			options: {
@@ -3086,6 +3087,8 @@ describe("Test broker.emit", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1234",
 			options: {
@@ -3103,7 +3106,11 @@ describe("Test broker.emit", () => {
 		broker.registry.events.callEventHandler.mockClear();
 		broker.registry.events.getBalancedEndpoints.mockClear();
 
-		broker.emit("test.event", { a: 5 }, { groups: ["users", "payments"], b: 6 });
+		broker.emit(
+			"test.event",
+			{ a: 5 },
+			{ groups: ["users", "payments"], b: 6, headers: { auth: false } }
+		);
 
 		expect(broker.registry.events.getBalancedEndpoints).toHaveBeenCalledTimes(1);
 		expect(broker.registry.events.getBalancedEndpoints).toHaveBeenCalledWith(
@@ -3125,10 +3132,13 @@ describe("Test broker.emit", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: { auth: false },
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1234",
 			options: {
 				groups: ["users", "payments"],
+				headers: { auth: false },
 				b: 6
 			},
 			params: { a: 5 },
@@ -3172,7 +3182,7 @@ describe("Test broker.emit with transporter", () => {
 		]
 	]);
 	broker.localBus.emit = jest.fn();
-	broker.registry.events.callEventHandler = jest.fn();
+	broker.registry.events.callEventHandler = jest.fn(() => Promise.resolve());
 	broker.getEventGroups = jest.fn(() => ["mail", "payment"]);
 
 	it("should call sendEvent with ctx", () => {
@@ -3192,6 +3202,8 @@ describe("Test broker.emit with transporter", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1",
 			options: {},
@@ -3215,6 +3227,8 @@ describe("Test broker.emit with transporter", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-2",
 			options: {},
@@ -3237,6 +3251,8 @@ describe("Test broker.emit with transporter", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-3",
 			options: {},
@@ -3283,6 +3299,8 @@ describe("Test broker.emit with transporter", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1",
 			options: {},
@@ -3323,6 +3341,8 @@ describe("Test broker.emit with transporter", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1",
 			options: {
@@ -3366,6 +3386,8 @@ describe("Test broker.emit with transporter", () => {
 			eventType: "emit",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-1",
 			options: {
@@ -3410,6 +3432,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-2",
 			options: {},
@@ -3432,6 +3456,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-3",
 			options: {},
@@ -3472,6 +3498,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-2",
 			options: {},
@@ -3494,6 +3522,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-3",
 			options: {},
@@ -3537,6 +3567,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-2",
 			options: { groups: ["mail", "payment"] },
@@ -3559,6 +3591,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-3",
 			options: { groups: ["mail", "payment"] },
@@ -3599,6 +3633,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-2",
 			options: {},
@@ -3621,6 +3657,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-3",
 			options: {},
@@ -3666,6 +3704,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-2",
 			options: {},
@@ -3689,6 +3729,8 @@ describe("Test broker broadcast", () => {
 			eventType: "broadcast",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "node-3",
 			options: {},
@@ -3708,7 +3750,7 @@ describe("Test broker broadcast", () => {
 
 describe("Test broker broadcastLocal", () => {
 	let broker = new ServiceBroker({ logger: false, nodeID: "server-1" });
-	broker.emitLocalServices = jest.fn();
+	broker.emitLocalServices = jest.fn(() => Promise.resolve());
 	broker.localBus.emit = jest.fn();
 
 	it("should call emitLocalServices without payload", () => {
@@ -3727,6 +3769,8 @@ describe("Test broker broadcastLocal", () => {
 			eventType: "broadcastLocal",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "server-1",
 			options: {},
@@ -3759,6 +3803,8 @@ describe("Test broker broadcastLocal", () => {
 			eventType: "broadcastLocal",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "server-1",
 			options: {},
@@ -3791,6 +3837,8 @@ describe("Test broker broadcastLocal", () => {
 			eventType: "broadcastLocal",
 			level: 1,
 			meta: {},
+			headers: {},
+			responseHeaders: {},
 			needAck: null,
 			nodeID: "server-1",
 			options: {},
@@ -3919,7 +3967,7 @@ describe("Test broker getHealthStatus", () => {
 		broker.getHealthStatus();
 
 		expect(H.getHealthStatus).toHaveBeenCalledTimes(1);
-		expect(H.getHealthStatus).toHaveBeenCalledWith(broker);
+		expect(H.getHealthStatus).toHaveBeenCalledWith();
 	});
 });
 
@@ -3965,7 +4013,7 @@ describe("Test registry links", () => {
 	broker.registry.getLocalNodeInfo = jest.fn();
 	broker.registry.events.getGroups = jest.fn();
 	broker.registry.events.getAllEndpoints = jest.fn(() => [{}]);
-	broker.registry.events.emitLocalServices = jest.fn();
+	broker.registry.events.emitLocalServices = jest.fn(() => Promise.resolve());
 
 	it("should call registry.getLocalNodeInfo", () => {
 		broker.getLocalNodeInfo();

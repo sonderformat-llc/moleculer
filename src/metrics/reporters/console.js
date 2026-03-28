@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -13,20 +13,32 @@ const METRIC = require("../constants");
 const { isFunction } = require("../../utils");
 
 /**
+ * Import types
+ *
+ * @typedef {import("../registry")} MetricRegistry
+ * @typedef {import("./console").ConsoleReporterOptions} ConsoleReporterOptions
+ * @typedef {import("./console")} ConsoleReporterClass
+ * @typedef {import("../types/base")} BaseMetric
+ */
+
+/**
  * Console reporter for Moleculer Metrics
  *
  * @class ConsoleReporter
  * @extends {BaseReporter}
+ * @implements {ConsoleReporterClass}
  */
 class ConsoleReporter extends BaseReporter {
 	/**
 	 * Creates an instance of ConsoleReporter.
-	 * @param {Object} opts
+	 *
+	 * @param {ConsoleReporterOptions?} opts
 	 * @memberof ConsoleReporter
 	 */
 	constructor(opts) {
 		super(opts);
 
+		/** @type {ConsoleReporterOptions} */
 		this.opts = _.defaultsDeep(this.opts, {
 			interval: 5,
 			logger: null,
@@ -41,6 +53,7 @@ class ConsoleReporter extends BaseReporter {
 
 	/**
 	 * Initialize reporter
+	 *
 	 * @param {MetricRegistry} registry
 	 * @memberof ConsoleReporter
 	 */
@@ -62,7 +75,7 @@ class ConsoleReporter extends BaseReporter {
 	 */
 	labelsToStr(labels) {
 		const keys = Object.keys(labels);
-		if (keys.length == 0) return kleur.gray("{}");
+		if (keys.length === 0) return kleur.gray("{}");
 
 		return (
 			kleur.gray("{") +
@@ -91,7 +104,7 @@ class ConsoleReporter extends BaseReporter {
 
 		if (this.opts.onlyChanges) list = list.filter(metric => this.lastChanges.has(metric.name));
 
-		if (list.length == 0) return;
+		if (list.length === 0) return;
 
 		this.log(
 			kleur.gray(`------------------- [ METRICS START (${list.length}) ] -------------------`)
@@ -103,7 +116,7 @@ class ConsoleReporter extends BaseReporter {
 					" " +
 					kleur.gray("(" + metric.type + ")")
 			);
-			if (metric.values.size == 0) {
+			if (metric.values.size === 0) {
 				this.log(kleur.gray("  <no values>"));
 			} else {
 				const unit = metric.unit
@@ -209,9 +222,6 @@ class ConsoleReporter extends BaseReporter {
 	 * Some metric has been changed.
 	 *
 	 * @param {BaseMetric} metric
-	 * @param {any} value
-	 * @param {Object} labels
-	 * @param {Number?} timestamp
 	 *
 	 * @memberof BaseReporter
 	 */

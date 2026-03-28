@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -9,14 +9,24 @@
 const BaseDiscoverer = require("./base");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./local")} LocalDiscovererClass
+ * @typedef {import("./local").LocalDiscovererOptions} LocalDiscovererOptions
+ * @typedef {import("../node")} Node
+ */
+
+/**
  * Local (built-in) Discoverer class
  *
  * @class Discoverer
+ * @implements {LocalDiscovererClass}
  */
 class LocalDiscoverer extends BaseDiscoverer {
 	/**
 	 * Creates an instance of Discoverer.
 	 *
+	 * @param {LocalDiscovererOptions?} opts
 	 * @memberof LocalDiscoverer
 	 */
 	constructor(opts) {
@@ -38,6 +48,7 @@ class LocalDiscoverer extends BaseDiscoverer {
 	 * Discover a new or old node.
 	 *
 	 * @param {String} nodeID
+	 * @returns {Promise<Node | void>}
 	 */
 	discoverNode(nodeID) {
 		if (!this.transit) return this.Promise.resolve();
@@ -46,6 +57,7 @@ class LocalDiscoverer extends BaseDiscoverer {
 
 	/**
 	 * Discover all nodes (after connected)
+	 * @returns {Promise<Node[] | void>}
 	 */
 	discoverAllNodes() {
 		if (!this.transit) return this.Promise.resolve();
@@ -55,7 +67,8 @@ class LocalDiscoverer extends BaseDiscoverer {
 	/**
 	 * Local service registry has been changed. We should notify remote nodes.
 	 *
-	 * @param {String} nodeID
+	 * @param {String=} nodeID
+	 * @returns {Promise<void>}
 	 */
 	sendLocalNodeInfo(nodeID) {
 		if (!this.transit) return this.Promise.resolve();

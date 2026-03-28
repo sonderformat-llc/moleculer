@@ -18,10 +18,11 @@ const broker = new ServiceBroker({
 		}
 	},
 	*/
+	transporter: "Redis",
 	//transporter: "kafka://localhost:9093",
 	//transporter: "amqp://192.168.0.181:5672",
 	//transporter: "AMQP10",
-	transporter: "NATS",
+	//transporter: "NATS",
 	//serializer: "MsgPack",
 
 	//disableBalancer: true,
@@ -61,8 +62,8 @@ const broker = new ServiceBroker({
 	logLevel: "info",
 
 	middlewares: [
-		//Middlewares.Transmit.Encryption("moleculer", "aes-256-cbc"),
-		//Middlewares.Transmit.Compression(),
+		// Middlewares.Transmit.Encryption("moleculer", "aes-256-cbc"),
+		// Middlewares.Transmit.Compression()
 		//Middlewares.Debugging.TransitLogger({ logPacketData: false, /*folder: null, colors: { send: "magenta", receive: "blue"}*/ }),
 		//Middlewares.Debugging.ActionLogger({ logPacketData: false, /*folder: null, colors: { send: "magenta", receive: "blue"}*/ }),
 		//require("./RedisHeartbeat")
@@ -124,9 +125,9 @@ broker.createService({
 broker.createService({
 	name: "metrics",
 	events: {
-		"$node.pong"({ nodeID, elapsedTime, timeDiff }) {
+		"$node.pong"({ params }) {
 			this.logger.info(
-				`PING '${nodeID}' - Time: ${elapsedTime}ms, Time difference: ${timeDiff}ms`
+				`PING '${params.nodeID}' - Time: ${params.elapsedTime}ms, Time difference: ${params.timeDiff}ms`
 			);
 		}
 		/*"metrics.circuit-breaker.opened"(payload, sender) {

@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -22,6 +22,16 @@ const TcpReader = require("./tcp/tcp-reader");
 const TcpWriter = require("./tcp/tcp-writer");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./tcp")} TcpTransporterClass
+ * @typedef {import("./tcp").TcpTransporterOptions} TcpTransporterOptions
+ * @typedef {import("../transit")} Transit
+ * @typedef {import("../packets").Packet} Packet
+ * @typedef {import("net").Socket} Socket
+ */
+
+/**
  * TCP Transporter with optional UDP discovery ("zero configuration") module.
  *
  * TCP Transporter uses fault tolerant and peer-to-peer <b>Gossip Protocol</b>
@@ -33,12 +43,13 @@ const TcpWriter = require("./tcp/tcp-writer");
  *
  * @class TcpTransporter
  * @extends {Transporter}
+ * @implements {TcpTransporterClass}
  */
 class TcpTransporter extends Transporter {
 	/**
 	 * Creates an instance of TcpTransporter.
 	 *
-	 * @param {any} opts
+	 * @param {TcpTransporterOptions} opts
 	 *
 	 * @memberof TcpTransporter
 	 */
@@ -47,7 +58,9 @@ class TcpTransporter extends Transporter {
 
 		super(opts);
 
+		/** @type {TcpTransporterOptions} */
 		this.opts = Object.assign(
+			/** @type {TcpTransporterOptions} */
 			{
 				// UDP discovery options
 				udpDiscovery: true,
@@ -89,8 +102,8 @@ class TcpTransporter extends Transporter {
 	 * Init transporter
 	 *
 	 * @param {Transit} transit
-	 * @param {Function} messageHandler
-	 * @param {Function} afterConnect
+	 * @param {(cmd: string, msg: string) => void} messageHandler
+	 * @param {(wasReconnect: boolean) => void} afterConnect
 	 *
 	 * @memberof BaseTransporter
 	 */
@@ -184,7 +197,7 @@ class TcpTransporter extends Transporter {
 
 	loadUrls() {
 		if (!this.opts.urls) return this.Promise.resolve();
-		if (Array.isArray(this.opts.urls) && this.opts.urls.length == 0)
+		if (Array.isArray(this.opts.urls) && this.opts.urls.length === 0)
 			return this.Promise.resolve();
 
 		return this.Promise.resolve(this.opts.urls)
@@ -194,10 +207,9 @@ class TcpTransporter extends Transporter {
 					this.logger.debug(`Load nodes list from file '${fName}'...`);
 					let content = fs.readFileSync(fName);
 					if (content && content.length > 0) {
-						content = content.toString().trim();
-						if (content.startsWith("{") || content.startsWith("["))
-							return JSON.parse(content);
-						else return content.split("\n").map(s => s.trim());
+						const str = content.toString().trim();
+						if (str.startsWith("{") || str.startsWith("[")) return JSON.parse(str);
+						else return str.split("\n").map(s => s.trim());
 					}
 				}
 
@@ -219,15 +231,16 @@ class TcpTransporter extends Transporter {
 						if (s.startsWith("tcp://")) s = s.replace("tcp://", "");
 
 						const p = s.split("/");
-						if (p.length != 2)
-							return this.logger.warn(
-								"Invalid endpoint URL. Missing nodeID. URL:",
-								s
-							);
+						if (p.length !== 2) {
+							this.logger.warn("Invalid endpoint URL. Missing nodeID. URL:", s);
+							return;
+						}
 
 						const u = p[0].split(":");
-						if (u.length < 2)
-							return this.logger.warn("Invalid endpoint URL. Missing port. URL:", s);
+						if (u.length < 2) {
+							this.logger.warn("Invalid endpoint URL. Missing port. URL:", s);
+							return;
+						}
 
 						const nodeID = p[1];
 						const port = Number(u.pop());
@@ -255,7 +268,7 @@ class TcpTransporter extends Transporter {
 	 * Process incoming packets
 	 *
 	 * @param {String} type
-	 * @param {Object} message
+	 * @param {Buffer} message
 	 * @param {Socket} socket
 	 */
 	onIncomingMessage(type, message, socket) {
@@ -267,17 +280,19 @@ class TcpTransporter extends Transporter {
 	 *
 	 * @param {String} cmd
 	 * @param {Buffer} data
+	 * @param {Socket} socket
+	 * @returns {void | Promise<void>}
 	 */
-	receive(type, message, socket) {
-		switch (type) {
+	receive(cmd, data, socket) {
+		switch (cmd) {
 			case P.PACKET_GOSSIP_HELLO:
-				return this.processGossipHello(message, socket);
+				return this.processGossipHello(data, socket);
 			case P.PACKET_GOSSIP_REQ:
-				return this.processGossipRequest(message);
+				return this.processGossipRequest(data);
 			case P.PACKET_GOSSIP_RES:
-				return this.processGossipResponse(message);
+				return this.processGossipResponse(data);
 			default:
-				return this.incomingMessage(type, message);
+				return this.incomingMessage(cmd, data);
 		}
 	}
 
@@ -285,11 +300,14 @@ class TcpTransporter extends Transporter {
 	 * Start Gossip timers
 	 */
 	startTimers() {
-		this.gossipTimer = setInterval(() => {
-			this.getLocalNodeInfo()
-				.updateLocalInfo(this.broker.getCpuUsage)
-				.then(() => this.sendGossipRequest());
-		}, Math.max(this.opts.gossipPeriod, 1) * 1000);
+		this.gossipTimer = setInterval(
+			() => {
+				this.getLocalNodeInfo()
+					.updateLocalInfo(this.broker.getCpuUsage)
+					.then(() => this.sendGossipRequest());
+			},
+			Math.max(this.opts.gossipPeriod, 1) * 1000
+		);
 		this.gossipTimer.unref();
 	}
 
@@ -309,6 +327,7 @@ class TcpTransporter extends Transporter {
 	 * @param {String} id - NodeID
 	 * @param {String} address
 	 * @param {Number} port
+	 * @returns {Node}
 	 */
 	addOfflineNode(id, address, port) {
 		const node = new Node(id);
@@ -329,7 +348,7 @@ class TcpTransporter extends Transporter {
 	 * Wrapper for TCP writer
 	 *
 	 * @param {String} nodeID
-	 * @returns
+	 * @returns {Node}
 	 * @memberof TcpTransporter
 	 */
 	getNode(nodeID) {
@@ -359,6 +378,7 @@ class TcpTransporter extends Transporter {
 	 * Send a Gossip Hello to the remote node
 	 *
 	 * @param {String} nodeID
+	 * @returns {Promise}
 	 */
 	sendHello(nodeID) {
 		const node = this.getNode(nodeID);
@@ -393,6 +413,7 @@ class TcpTransporter extends Transporter {
 	processGossipHello(msg, socket) {
 		try {
 			const packet = this.deserialize(P.PACKET_GOSSIP_HELLO, msg);
+			/** @type {Record<string, any>} */
 			const payload = packet.payload;
 			const nodeID = payload.sender;
 
@@ -440,10 +461,10 @@ class TcpTransporter extends Transporter {
 		});
 
 		/* istanbul ignore next */
-		if (Object.keys(packet.offline).length == 0) delete packet.offline;
+		if (Object.keys(packet.offline).length === 0) delete packet.offline;
 
 		/* istanbul ignore next */
-		if (Object.keys(packet.online).length == 0) delete packet.online;
+		if (Object.keys(packet.online).length === 0) delete packet.online;
 
 		if (onlineList.length > 0) {
 			// Send gossip message to a live endpoint
@@ -465,13 +486,13 @@ class TcpTransporter extends Transporter {
 	 * Send a Gossip request packet to a random endpoint
 	 *
 	 * @param {Object} data
-	 * @param {Array} endpoints
+	 * @param {Array<Node>} endpoints
 	 */
 	sendGossipToRandomEndpoint(data, endpoints) {
-		if (endpoints.length == 0) return;
+		if (endpoints.length === 0) return;
 
 		const ep =
-			endpoints.length == 1
+			endpoints.length === 1
 				? endpoints[0]
 				: endpoints[Math.floor(Math.random() * endpoints.length)];
 		if (ep) {
@@ -502,6 +523,7 @@ class TcpTransporter extends Transporter {
 
 		try {
 			const packet = this.deserialize(P.PACKET_GOSSIP_REQ, msg);
+			/** @type {Record<string, any>} */
 			const payload = packet.payload;
 
 			if (this.GOSSIP_DEBUG)
@@ -577,9 +599,9 @@ class TcpTransporter extends Transporter {
 			});
 
 			// Remove empty keys
-			if (Object.keys(response.offline).length == 0) delete response.offline;
+			if (Object.keys(response.offline).length === 0) delete response.offline;
 
-			if (Object.keys(response.online).length == 0) delete response.online;
+			if (Object.keys(response.online).length === 0) delete response.online;
 
 			if (response.online || response.offline) {
 				let sender = this.nodes.get(payload.sender);
@@ -619,6 +641,7 @@ class TcpTransporter extends Transporter {
 	processGossipResponse(msg) {
 		try {
 			const packet = this.deserialize(P.PACKET_GOSSIP_RES, msg);
+			/** @type {Record<string, any>} */
 			const payload = packet.payload;
 
 			if (this.GOSSIP_DEBUG)
@@ -638,9 +661,9 @@ class TcpTransporter extends Transporter {
 
 					let info, cpu, cpuSeq;
 
-					if (row.length == 1) info = row[0];
-					else if (row.length == 2) [cpuSeq, cpu] = row;
-					else if (row.length == 3) [info, cpuSeq, cpu] = row;
+					if (row.length === 1) info = row[0];
+					else if (row.length === 2) [cpuSeq, cpu] = row;
+					else if (row.length === 3) [info, cpuSeq, cpu] = row;
 
 					let node = this.nodes.get(nodeID);
 					if (info && (!node || node.seq < info.seq)) {
@@ -702,10 +725,13 @@ class TcpTransporter extends Transporter {
 		if (this.writer) this.writer.close();
 
 		if (this.udpServer) this.udpServer.close();
+
+		return this.Promise.resolve();
 	}
 
 	/**
 	 * Get local node info instance
+	 * @returns {Node}
 	 */
 	getLocalNodeInfo() {
 		return this.nodes.localNode;
@@ -715,6 +741,7 @@ class TcpTransporter extends Transporter {
 	 * Get a node info instance by nodeID
 	 *
 	 * @param {String} nodeID
+	 * @returns {Node}
 	 */
 	getNodeInfo(nodeID) {
 		return this.nodes.get(nodeID);
@@ -722,13 +749,8 @@ class TcpTransporter extends Transporter {
 
 	/**
 	 * Subscribe to a command
-	 *
-	 * @param {String} cmd
-	 * @param {String} nodeID
-	 *
-	 * @memberof TcpTransporter
 	 */
-	subscribe(/*cmd, nodeID*/) {
+	subscribe() {
 		/* istanbul ignore next */
 		return this.Promise.resolve();
 	}
@@ -758,6 +780,28 @@ class TcpTransporter extends Transporter {
 
 		const data = this.serialize(packet);
 		return this.send(packet.type, data, { packet });
+	}
+
+	/**
+	 * Subscribe to balanced action commands
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 */
+	subscribeBalancedRequest() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
+	}
+
+	/**
+	 * Subscribe to balanced event command
+	 * Not implemented.
+	 *
+	 * @returns {Promise}
+	 */
+	subscribeBalancedEvent() {
+		/* istanbul ignore next */
+		return this.broker.Promise.resolve();
 	}
 
 	/**

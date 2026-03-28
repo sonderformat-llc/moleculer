@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2025 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -15,16 +15,34 @@ const { METRIC } = require("./metrics");
 const C = require("./constants");
 
 /**
+ * @typedef {import("./service-broker")} ServiceBroker
+ * @typedef {import("./transporters/base")} Transporter
+ * @typedef {import("stream").Stream} Stream
+ * @typedef {import("stream").Readable} Readable
+ * @typedef {import("./context")} Context
+ * @typedef {import("./registry").NodeRawInfo} NodeRawInfo
+ * @typedef {import("./transit")} TransitClass
+ * @typedef {import("./packets").PacketDiscoverPayload} PacketDiscoverPayload
+ * @typedef {import("./packets").PacketInfoPayload} PacketInfoPayload
+ * @typedef {import("./packets").PacketRequestPayload} PacketRequestPayload
+ * @typedef {import("./packets").PacketResponsePayload} PacketResponsePayload
+ * @typedef {import("./packets").PacketEventPayload} PacketEventPayload
+ * @typedef {import("./packets").PacketPingPayload} PacketPingPayload
+ * @typedef {import("./packets").PacketPongPayload} PacketPongPayload
+ */
+
+/**
  * Transit class
  *
  * @class Transit
+ * @implements {TransitClass}
  */
 class Transit {
 	/**
 	 * Create an instance of Transit.
 	 *
-	 * @param {ServiceBroker} Broker instance
-	 * @param {Transporter} Transporter instance
+	 * @param {ServiceBroker} broker
+	 * @param {Transporter} transporter
 	 * @param {Object?} opts
 	 *
 	 * @memberof Transit
@@ -44,20 +62,6 @@ class Transit {
 		this.pendingRequests = new Map();
 		this.pendingReqStreams = new Map();
 		this.pendingResStreams = new Map();
-
-		/* deprecated */
-		this.stat = {
-			packets: {
-				sent: {
-					count: 0,
-					bytes: 0
-				},
-				received: {
-					count: 0,
-					bytes: 0
-				}
-			}
-		};
 
 		this.connected = false;
 		this.disconnecting = false;
@@ -101,14 +105,14 @@ class Transit {
 				type: METRIC.TYPE_GAUGE,
 				description: "Transit is ready"
 			})
-			.set(0);
+			?.set(0);
 		this.metrics
 			.register({
 				name: METRIC.MOLECULER_TRANSIT_CONNECTED,
 				type: METRIC.TYPE_GAUGE,
 				description: "Transit is connected"
 			})
-			.set(0);
+			?.set(0);
 
 		this.metrics.register({
 			name: METRIC.MOLECULER_TRANSIT_PONG_TIME,
@@ -165,7 +169,7 @@ class Transit {
 
 				if (this.__connectResolve) {
 					this.isReady = true;
-					this.__connectResolve();
+					this.__connectResolve(null);
 					this.__connectResolve = null;
 				}
 
@@ -311,9 +315,9 @@ class Transit {
 	/**
 	 * Message handler for incoming packets
 	 *
-	 * @param {Array} topic
-	 * @param {String} msg
-	 * @returns {Promise<boolean>} If packet is processed resolve with `true` else `false`
+	 * @param {string} cmd
+	 * @param {Packet} packet
+	 * @returns {Promise} If packet is processed resolve with `true` else `false`
 	 *
 	 * @memberof Transit
 	 */
@@ -342,11 +346,13 @@ class Transit {
 
 			if (payload.sender === this.nodeID) {
 				// Detect nodeID conflict
-				if (cmd === P.PACKET_INFO && payload.instanceID !== this.instanceID) {
-					this.broker.fatal(
-						"ServiceBroker has detected a nodeID conflict, use unique nodeIDs. ServiceBroker stopped."
-					);
-					return this.Promise.resolve(false);
+				if (cmd === P.PACKET_INFO) {
+					if (/** @type {PacketInfoPayload} */ (payload).instanceID !== this.instanceID) {
+						this.broker.fatal(
+							"ServiceBroker has detected a nodeID conflict, use unique nodeIDs. ServiceBroker stopped."
+						);
+						return this.Promise.resolve(false);
+					}
 				}
 
 				// Skip own packets (if only built-in balancer disabled)
@@ -356,17 +362,19 @@ class Transit {
 
 			// Request
 			if (cmd === P.PACKET_REQUEST) {
-				return this.requestHandler(payload).then(() => true);
+				return this.requestHandler(/** @type {PacketRequestPayload} */ (payload)).then(
+					() => true
+				);
 			}
 
 			// Response
 			else if (cmd === P.PACKET_RESPONSE) {
-				this.responseHandler(payload);
+				this.responseHandler(/** @type {PacketResponsePayload} */ (payload));
 			}
 
 			// Event
 			else if (cmd === P.PACKET_EVENT) {
-				return this.eventHandler(payload);
+				return this.eventHandler(/** @type {PacketEventPayload} */ (payload));
 			}
 
 			// Discover
@@ -391,12 +399,12 @@ class Transit {
 
 			// Ping
 			else if (cmd === P.PACKET_PING) {
-				this.sendPong(payload);
+				this.sendPong(/** @type {PacketPingPayload} */ (payload));
 			}
 
 			// Pong
 			else if (cmd === P.PACKET_PONG) {
-				this.processPong(payload);
+				this.processPong(/** @type {PacketPongPayload} */ (payload));
 			}
 
 			return this.Promise.resolve(true);
@@ -415,7 +423,7 @@ class Transit {
 	/**
 	 * Handle incoming event
 	 *
-	 * @param {any} payload
+	 * @param {PacketEventPayload} payload
 	 * @returns {Promise<boolean>}
 	 * @memberof Transit
 	 */
@@ -442,6 +450,7 @@ class Transit {
 		ctx.eventGroups = payload.groups;
 		ctx.eventType = payload.broadcast ? "broadcast" : "emit";
 		ctx.meta = payload.meta || {};
+		ctx.headers = payload.headers || {};
 		ctx.level = payload.level;
 		ctx.tracing = !!payload.tracing;
 		ctx.parentID = payload.parentID;
@@ -450,13 +459,20 @@ class Transit {
 		ctx.nodeID = payload.sender;
 
 		// ensure the eventHandler resolves true when the event was handled successfully
-		return this.broker.emitLocalServices(ctx).then(() => true);
+		return this.broker
+			.emitLocalServices(ctx)
+			.then(() => true)
+			.catch(err => {
+				this.logger.error(err);
+
+				return false;
+			});
 	}
 
 	/**
 	 * Handle incoming request
 	 *
-	 * @param {Object} payload
+	 * @param {PacketRequestPayload} payload
 	 * @returns {Promise<any>}
 	 * @memberof Transit
 	 */
@@ -477,11 +493,10 @@ class Transit {
 				});
 			}
 
-			let pass;
+			let stream;
 			if (payload.stream !== undefined) {
-				pass = this._handleIncomingRequestStream(payload);
-				// eslint-disable-next-line security/detect-possible-timing-attacks
-				if (pass === null) return this.Promise.resolve();
+				stream = this._handleIncomingRequestStream(payload);
+				if (stream === null) return this.Promise.resolve();
 			}
 
 			const endpoint = this.broker._getLocalActionEndpoint(payload.action);
@@ -490,11 +505,15 @@ class Transit {
 			const ctx = new this.broker.ContextFactory(this.broker);
 			ctx.setEndpoint(endpoint);
 			ctx.id = payload.id;
-			ctx.setParams(pass ? pass : payload.params, this.broker.options.contextParamsCloning);
+			ctx.setParams(payload.params, this.broker.options.contextParamsCloning);
+			if (stream) {
+				ctx.stream = stream;
+			}
 			ctx.parentID = payload.parentID;
 			ctx.requestID = payload.requestID;
 			ctx.caller = payload.caller;
 			ctx.meta = payload.meta || {};
+			ctx.headers = payload.headers || {};
 			ctx.level = payload.level;
 			ctx.tracing = payload.tracing;
 			ctx.nodeID = payload.sender;
@@ -506,10 +525,28 @@ class Transit {
 			p.ctx = ctx;
 
 			return p
-				.then(res => this.sendResponse(payload.sender, payload.id, ctx.meta, res, null))
-				.catch(err => this.sendResponse(payload.sender, payload.id, ctx.meta, null, err));
+				.then(res =>
+					this.sendResponse(
+						payload.sender,
+						payload.id,
+						ctx.meta,
+						ctx.responseHeaders,
+						res,
+						null
+					)
+				)
+				.catch(err =>
+					this.sendResponse(
+						payload.sender,
+						payload.id,
+						ctx.meta,
+						ctx.responseHeaders,
+						null,
+						err
+					)
+				);
 		} catch (err) {
-			return this.sendResponse(payload.sender, payload.id, payload.meta, null, err);
+			return this.sendResponse(payload.sender, payload.id, payload.meta, null, null, err);
 		}
 	}
 
@@ -517,58 +554,58 @@ class Transit {
 	 * Handle incoming request stream.
 	 *
 	 * @param {Object} payload
-	 * @returns {Stream}
+	 * @returns {Stream|false|null}
 	 */
 	_handleIncomingRequestStream(payload) {
 		const reqStream = this.pendingReqStreams.get(payload.id);
-		let pass = reqStream ? reqStream.stream : undefined;
-		let isNew = false;
+		let stream = reqStream ? reqStream.stream : undefined;
 
-		if (!payload.stream && !pass && !payload.seq) {
+		if (!payload.stream && !stream && !payload.seq) {
 			// It is not a stream data
 			return false;
 		}
 
-		if (!pass) {
-			isNew = true;
+		if (!stream) {
 			this.logger.debug(
 				`<= New stream is received from '${payload.sender}'. Seq: ${payload.seq}`
 			);
 
 			// Create a new pass stream
-			pass = new Transform({
+			stream = new Transform({
 				// TODO: It's incorrect because the chunks may receive in random order, so it processes an empty meta.
 				// Meta is filled correctly only in the 0. chunk.
-				objectMode: payload.meta && payload.meta["$streamObjectMode"],
+				objectMode: payload.headers?.$streamObjectMode,
 				transform: function (chunk, encoding, done) {
 					this.push(chunk);
 					return done();
 				}
 			});
 
-			pass.$prevSeq = -1;
-			pass.$pool = new Map();
+			delete payload.headers?.$streamObjectMode;
 
-			this.pendingReqStreams.set(payload.id, { sender: payload.sender, stream: pass });
+			stream.$prevSeq = -1;
+			stream.$pool = new Map();
 
-			pass.on("moleculer-timeout-middleware", timeout => {
+			this.pendingReqStreams.set(payload.id, { sender: payload.sender, stream });
+
+			stream.on("moleculer-timeout-middleware", timeout => {
 				setTimeout(() => {
 					this.pendingReqStreams.delete(payload.id);
 					this._destroyStreamIfPossible(
-						pass,
+						stream,
 						`Pending request stream ${payload.id} have been closed by timeout ${timeout} ms`
 					);
 				}, 1000);
 			});
 		}
 
-		if (payload.seq > pass.$prevSeq + 1) {
+		if (payload.seq > stream.$prevSeq + 1) {
 			// Some chunks are late. Store these chunks.
 			this.logger.debug(
-				`Put the chunk into pool (size: ${pass.$pool.size}). Seq: ${payload.seq}`
+				`Put the chunk into pool (size: ${stream.$pool.size}). Seq: ${payload.seq}`
 			);
 
-			pass.$pool.set(payload.seq, payload);
+			stream.$pool.set(payload.seq, payload);
 
 			// TODO: start timer.
 			// TODO: check length of pool.
@@ -578,16 +615,17 @@ class Transit {
 		}
 
 		// the next stream chunk received
-		pass.$prevSeq = payload.seq;
+		stream.$prevSeq = payload.seq;
 
-		if (pass.$prevSeq > 0) {
+		if (stream.$prevSeq > 0) {
 			if (!payload.stream) {
 				// Check stream error
-				if (payload.meta && payload.meta["$streamError"]) {
-					pass.emit(
+				if (payload.headers?.$streamError) {
+					stream.emit(
 						"error",
-						this._createErrFromPayload(payload.meta["$streamError"], payload)
+						this._createErrFromPayload(payload.headers.$streamError, payload)
 					);
+					delete payload.headers.$streamError;
 				}
 
 				this.logger.debug(
@@ -595,7 +633,7 @@ class Transit {
 				);
 
 				// End of stream
-				pass.end();
+				stream.end();
 
 				// Remove pending request stream
 				this.pendingReqStreams.delete(payload.id);
@@ -605,8 +643,8 @@ class Transit {
 				this.logger.debug(
 					`<= Stream chunk is received from '${payload.sender}'. Seq: ${payload.seq}`
 				);
-				pass.write(
-					payload.params.type === "Buffer"
+				stream.write(
+					payload.params?.type === "Buffer"
 						? Buffer.from(payload.params.data)
 						: payload.params
 				);
@@ -614,32 +652,33 @@ class Transit {
 		}
 
 		// Check newer chunks in the pool
-		if (pass.$pool.size > 0) {
-			this.logger.debug(`Has stored packets. Size: ${pass.$pool.size}`);
-			const nextSeq = pass.$prevSeq + 1;
-			const nextPacket = pass.$pool.get(nextSeq);
+		if (stream.$pool.size > 0) {
+			this.logger.debug(`Has stored packets. Size: ${stream.$pool.size}`);
+			const nextSeq = stream.$prevSeq + 1;
+			const nextPacket = stream.$pool.get(nextSeq);
 			if (nextPacket) {
-				pass.$pool.delete(nextSeq);
+				stream.$pool.delete(nextSeq);
 				setImmediate(() => this.requestHandler(nextPacket));
 			}
 		}
 
-		return pass && payload.seq == 0 ? pass : null;
+		return stream && payload.seq === 0 ? stream : null;
 	}
 
 	/**
 	 * Create an Error instance from payload ata
 	 * @param {Object} error
 	 * @param {Object} payload
+	 * @returns {Error}
 	 */
 	_createErrFromPayload(error, payload) {
-		return this.errorRegenerator.restore(error, payload);
+		return this.errorRegenerator?.restore(error, payload);
 	}
 
 	/**
 	 * Process incoming response of request
 	 *
-	 * @param {Object} packet
+	 * @param {PacketResponsePayload} packet
 	 *
 	 * @memberof Transit
 	 */
@@ -689,37 +728,39 @@ class Transit {
 	 * @param {Object} req
 	 */
 	_handleIncomingResponseStream(packet, req) {
-		let pass = this.pendingResStreams.get(packet.id);
-		if (!pass && !packet.stream && !packet.seq) return false;
+		let stream = this.pendingResStreams.get(packet.id);
+		if (!stream && !packet.stream && !packet.seq) return false;
 
-		if (!pass) {
+		if (!stream) {
 			this.logger.debug(
 				`<= New stream is received from '${packet.sender}'. Seq: ${packet.seq}`
 			);
 
-			pass = new Transform({
+			stream = new Transform({
 				// TODO: It's incorrect because the chunks may receive in random order, so it processes an empty meta.
 				// Meta is filled correctly only in the 0. chunk.
-				objectMode: packet.meta && packet.meta["$streamObjectMode"],
+				objectMode: packet.headers?.$streamObjectMode,
 				transform: function (chunk, encoding, done) {
 					this.push(chunk);
 					return done();
 				}
 			});
 
-			pass.$prevSeq = -1;
-			pass.$pool = new Map();
+			delete packet.headers?.$streamObjectMode;
 
-			this.pendingResStreams.set(packet.id, pass);
+			stream.$prevSeq = -1;
+			stream.$pool = new Map();
+
+			this.pendingResStreams.set(packet.id, stream);
 		}
 
-		if (packet.seq > pass.$prevSeq + 1) {
+		if (packet.seq > stream.$prevSeq + 1) {
 			// Some chunks are late. Store these chunks.
 			this.logger.debug(
-				`Put the chunk into pool (size: ${pass.$pool.size}). Seq: ${packet.seq}`
+				`Put the chunk into pool (size: ${stream.$pool.size}). Seq: ${packet.seq}`
 			);
 
-			pass.$pool.set(packet.seq, packet);
+			stream.$pool.set(packet.seq, packet);
 
 			// TODO: start timer.
 			// TODO: check length of pool.
@@ -729,24 +770,24 @@ class Transit {
 		}
 
 		// the next stream chunk received
-		pass.$prevSeq = packet.seq;
+		stream.$prevSeq = packet.seq;
 
-		if (pass && packet.seq == 0) {
-			req.resolve(pass);
+		if (stream && packet.seq === 0) {
+			req.resolve(stream);
 		}
 
-		if (pass.$prevSeq > 0) {
+		if (stream.$prevSeq > 0) {
 			if (!packet.stream) {
 				// Received error?
 				if (!packet.success)
-					pass.emit("error", this._createErrFromPayload(packet.error, packet));
+					stream.emit("error", this._createErrFromPayload(packet.error, packet));
 
 				this.logger.debug(
 					`<= Stream closing is received from '${packet.sender}'. Seq: ${packet.seq}`
 				);
 
 				// End of stream
-				pass.end();
+				stream.end();
 
 				// Remove pending request
 				this.removePendingRequest(packet.id);
@@ -757,19 +798,19 @@ class Transit {
 				this.logger.debug(
 					`<= Stream chunk is received from '${packet.sender}'. Seq: ${packet.seq}`
 				);
-				pass.write(
-					packet.data.type === "Buffer" ? Buffer.from(packet.data.data) : packet.data
+				stream.write(
+					packet.data?.type === "Buffer" ? Buffer.from(packet.data.data) : packet.data
 				);
 			}
 		}
 
 		// Check newer chunks in the pool
-		if (pass.$pool.size > 0) {
-			this.logger.debug(`Has stored packets. Size: ${pass.$pool.size}`);
-			const nextSeq = pass.$prevSeq + 1;
-			const nextPacket = pass.$pool.get(nextSeq);
+		if (stream.$pool.size > 0) {
+			this.logger.debug(`Has stored packets. Size: ${stream.$pool.size}`);
+			const nextSeq = stream.$prevSeq + 1;
+			const nextPacket = stream.$pool.get(nextSeq);
 			if (nextPacket) {
-				pass.$pool.delete(nextSeq);
+				stream.$pool.delete(nextSeq);
 				setImmediate(() => this.responseHandler(nextPacket));
 			}
 		}
@@ -781,7 +822,7 @@ class Transit {
 	 * Send a request to a remote service. It returns a Promise
 	 * what will be resolved when the response received.
 	 *
-	 * @param {<Context>} ctx Context of request
+	 * @param {Context} ctx Context of request
 	 * @returns {Promise}
 	 *
 	 * @memberof Transit
@@ -805,7 +846,7 @@ class Transit {
 	/**
 	 * Send a remote request
 	 *
-	 * @param {<Context>} ctx      Context of request
+	 * @param {Context} ctx      Context of request
 	 * @param {Function} resolve   Resolve of Promise
 	 * @param {Function} reject    Reject of Promise
 	 *
@@ -813,10 +854,9 @@ class Transit {
 	 */
 	_sendRequest(ctx, resolve, reject) {
 		const isStream =
-			ctx.params &&
-			ctx.params.readable === true &&
-			typeof ctx.params.on === "function" &&
-			typeof ctx.params.pipe === "function";
+			ctx.options?.stream?.readable === true &&
+			typeof ctx.options.stream.on === "function" &&
+			typeof ctx.options.stream.pipe === "function";
 
 		const request = {
 			action: ctx.action,
@@ -824,14 +864,15 @@ class Transit {
 			ctx,
 			resolve,
 			reject,
-			stream: isStream // ???
+			stream: isStream
 		};
 
 		const payload = {
 			id: ctx.id,
-			action: ctx.action.name,
-			params: isStream ? null : ctx.params,
+			action: ctx.action?.name,
+			params: ctx.params,
 			meta: ctx.meta,
+			headers: ctx.headers,
 			timeout: ctx.options.timeout,
 			level: ctx.level,
 			tracing: ctx.tracing,
@@ -841,13 +882,12 @@ class Transit {
 			stream: isStream
 		};
 
-		if (payload.stream) {
-			if (
-				ctx.params.readableObjectMode === true ||
-				(ctx.params._readableState && ctx.params._readableState.objectMode === true)
-			) {
-				payload.meta = payload.meta || {};
-				payload.meta["$streamObjectMode"] = true;
+		if (isStream) {
+			/** @type {Readable} */
+			const s = ctx.options.stream;
+			if (s.readableObjectMode === true) {
+				payload.headers = payload.headers ?? {};
+				payload.headers.$streamObjectMode = true;
 			}
 			payload.seq = 0;
 		}
@@ -856,11 +896,11 @@ class Transit {
 
 		const nodeName = ctx.nodeID ? `'${ctx.nodeID}'` : "someone";
 		const requestID = ctx.requestID ? "with requestID '" + ctx.requestID + "' " : "";
-		this.logger.debug(`=> Send '${ctx.action.name}' request ${requestID}to ${nodeName} node.`);
+		this.logger.debug(`=> Send '${ctx.action?.name}' request ${requestID}to ${nodeName} node.`);
 
 		const publishCatch = /* istanbul ignore next */ err => {
 			this.logger.error(
-				`Unable to send '${ctx.action.name}' request ${requestID}to ${nodeName} node.`,
+				`Unable to send '${ctx.action?.name}' request ${requestID}to ${nodeName} node.`,
 				err
 			);
 
@@ -874,8 +914,8 @@ class Transit {
 		// Add to pendings
 		this.pendingRequests.set(ctx.id, request);
 
-		if (request.stream) {
-			const pass = request.ctx.params;
+		if (isStream) {
+			const pass = ctx.options.stream;
 
 			pass.on("moleculer-timeout-middleware", timeout => {
 				this._destroyStreamIfPossible(
@@ -889,17 +929,16 @@ class Transit {
 		return this.publish(packet)
 			.then(() => {
 				if (isStream) {
-					// Skip to send ctx.meta with chunks because it doesn't appear on the remote side.
+					const { stream } = ctx.options;
+
+					// Skip to send ctx.meta after the first packet because it doesn't appear on the remote side.
 					payload.meta = {};
 					// Still send information about objectMode in case of packets are received in wrong order
-					if (
-						ctx.params.readableObjectMode === true ||
-						(ctx.params._readableState && ctx.params._readableState.objectMode === true)
-					) {
-						payload.meta["$streamObjectMode"] = true;
+					if (stream.readableObjectMode === true) {
+						payload.headers = payload.headers ?? {};
+						payload.headers.$streamObjectMode = true;
 					}
 
-					const stream = ctx.params;
 					stream.on("data", chunk => {
 						stream.pause();
 						const chunks = [];
@@ -911,7 +950,7 @@ class Transit {
 							let len = chunk.length;
 							let i = 0;
 							while (i < len) {
-								chunks.push(chunk.slice(i, (i += this.opts.maxChunkSize)));
+								chunks.push(chunk.subarray(i, (i += this.opts.maxChunkSize)));
 							}
 						} else {
 							chunks.push(chunk);
@@ -954,12 +993,12 @@ class Transit {
 						const copy = Object.assign({}, payload);
 						copy.seq = ++payload.seq;
 						copy.stream = false;
-						copy.meta["$streamError"] = this._createPayloadErrorField(err, payload);
+						copy.headers.$streamError = this._createPayloadErrorField(err, payload);
 						copy.params = null;
 
 						this.logger.debug(
 							`=> Send stream error ${requestID}to ${nodeName} node.`,
-							copy.meta["$streamError"]
+							copy.headers.$streamError
 						);
 
 						return this.publish(new Packet(P.PACKET_REQUEST, ctx.nodeID, copy)).catch(
@@ -993,7 +1032,7 @@ class Transit {
 			);
 		else
 			this.logger.debug(
-				`=> Send '${ctx.eventName}' event ${requestID}to '${groups.join(", ")}' group(s).`
+				`=> Send '${ctx.eventName}' event ${requestID}to '${groups?.join(", ")}' group(s).`
 			);
 
 		return this.publish(
@@ -1004,6 +1043,7 @@ class Transit {
 				groups,
 				broadcast: ctx.eventType == "broadcast",
 				meta: ctx.meta,
+				headers: ctx.headers,
 				level: ctx.level,
 				tracing: ctx.tracing,
 				parentID: ctx.parentID,
@@ -1023,6 +1063,8 @@ class Transit {
 					module: "transit",
 					type: C.FAILED_SEND_EVENT_PACKET
 				});
+
+				return Promise.reject(err);
 			}
 		);
 	}
@@ -1030,7 +1072,7 @@ class Transit {
 	/**
 	 * Remove a pending request
 	 *
-	 * @param {any} id
+	 * @param {String} id
 	 *
 	 * @memberof Transit
 	 */
@@ -1138,7 +1180,7 @@ class Transit {
 	 * @memberof Transit
 	 */
 	_createPayloadErrorField(err, payload) {
-		return this.errorRegenerator.extractPlainError(err, payload);
+		return this.errorRegenerator?.extractPlainError(err, payload);
 	}
 
 	/**
@@ -1146,17 +1188,19 @@ class Transit {
 	 *
 	 * @param {String} nodeID
 	 * @param {String} id
-	 * @param {any} meta
+	 * @param {Object} meta
+	 * @param {Object} headers
 	 * @param {any} data
-	 * @param {Error} err
+	 * @param {Error?} err
 	 *
 	 * @memberof Transit
 	 */
-	sendResponse(nodeID, id, meta, data, err) {
+	sendResponse(nodeID, id, meta, headers, data, err) {
 		// Publish the response
 		const payload = {
 			id: id,
 			meta: meta,
+			headers,
 			success: err == null,
 			data: data
 		};
@@ -1181,12 +1225,9 @@ class Transit {
 		) {
 			// Streaming response
 			payload.stream = true;
-			if (
-				data.readableObjectMode === true ||
-				(data._readableState && data._readableState.objectMode === true)
-			) {
-				payload.meta = payload.meta || {};
-				payload.meta["$streamObjectMode"] = true;
+			if (data.readableObjectMode === true || data._readableState?.objectMode === true) {
+				payload.headers = payload.headers || {};
+				payload.headers.$streamObjectMode = true;
 			}
 			payload.seq = 0;
 
@@ -1204,7 +1245,7 @@ class Transit {
 					let len = chunk.length;
 					let i = 0;
 					while (i < len) {
-						chunks.push(chunk.slice(i, (i += this.opts.maxChunkSize)));
+						chunks.push(chunk.subarray(i, (i += this.opts.maxChunkSize)));
 					}
 				} else {
 					chunks.push(chunk);
@@ -1309,6 +1350,8 @@ class Transit {
 	/**
 	 * Send node info package to other nodes.
 	 *
+	 * @param {NodeRawInfo} info
+	 * @param {String} nodeID
 	 * @memberof Transit
 	 */
 	sendNodeInfo(info, nodeID) {
@@ -1342,7 +1385,7 @@ class Transit {
 	 * Send ping to a node (or all nodes if nodeID is null)
 	 *
 	 * @param {String} nodeID
-	 * @param {String} id
+	 * @param {String=} id
 	 * @returns
 	 * @memberof Transit
 	 */
@@ -1368,7 +1411,7 @@ class Transit {
 	/**
 	 * Send back pong response
 	 *
-	 * @param {Object} payload
+	 * @param {PacketPingPayload} payload
 	 * @returns
 	 * @memberof Transit
 	 */
@@ -1396,7 +1439,7 @@ class Transit {
 	 * Process incoming PONG packet.
 	 * Measure ping time & current time difference.
 	 *
-	 * @param {Object} payload
+	 * @param {PacketPongPayload} payload
 	 * @memberof Transit
 	 */
 	processPong(payload) {
@@ -1446,22 +1489,9 @@ class Transit {
 	}
 
 	/**
-	 * Subscribe via transporter
-	 *
-	 * @param {String} topic
-	 * @param {String=} nodeID
-	 *
-	 * @deprecated
-	 * @memberof Transit
-	 */
-	subscribe(topic, nodeID) {
-		return this.tx.subscribe(topic, nodeID);
-	}
-
-	/**
 	 * Publish via transporter
 	 *
-	 * @param {Packet} Packet
+	 * @param {Packet} packet
 	 *
 	 * @memberof Transit
 	 */

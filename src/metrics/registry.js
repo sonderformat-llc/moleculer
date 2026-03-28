@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -17,7 +17,30 @@ const METRIC_NAME_REGEXP = /^[a-zA-Z_][a-zA-Z0-9-_:.]*$/;
 const METRIC_LABEL_REGEXP = /^[a-zA-Z_][a-zA-Z0-9-_.]*$/;
 
 /**
+ * Import types
+ *
+ * @typedef {import("./registry")} MetricRegistryClass
+ * @typedef {import("./registry").MetricListOptions} MetricListOptions
+ * @typedef {import("./registry").GaugeMetricOptions} GaugeMetricOptions
+ * @typedef {import("./registry").CounterMetricOptions} CounterMetricOptions
+ * @typedef {import("./registry").HistogramMetricOptions} HistogramMetricOptions
+ * @typedef {import("./registry").InfoMetricOptions} InfoMetricOptions
+ *
+ * @typedef {import("./types/counter")} CounterMetric
+ * @typedef {import("./types/gauge")} GaugeMetric
+ * @typedef {import("./types/histogram")} HistogramMetric
+ * @typedef {import("./types/info")} InfoMetric
+ * @typedef {import("./types/base")} BaseMetric
+ * @typedef {import("./types/base").BaseMetricOptions} BaseMetricOptions
+ *
+ * @typedef {import("../service-broker")} ServiceBroker
+ */
+
+/**
  * Metric Registry class
+ *
+ * @class MetricRegistry
+ * @implements {MetricRegistryClass}
  */
 class MetricRegistry {
 	/**
@@ -120,9 +143,28 @@ class MetricRegistry {
 	/**
 	 * Register a new metric.
 	 *
-	 * @param {Object} opts
-	 * @returns {BaseMetric}
-	 * @memberof MetricRegistry
+	 * @overload
+	 * @param {GaugeMetricOptions} opts
+	 * @returns {GaugeMetric}
+	 */
+	/**
+	 * @overload
+	 * @param {CounterMetricOptions} opts
+	 * @returns {CounterMetric}
+	 */
+	/**
+	 * @overload
+	 * @param {HistogramMetricOptions} opts
+	 * @returns {HistogramMetric}
+	 */
+	/**
+	 * @overload
+	 * @param {InfoMetricOptions} opts
+	 * @returns {InfoMetric}
+	 */
+	/**
+	 * @param {GaugeMetricOptions|CounterMetricOptions|HistogramMetricOptions|InfoMetricOptions} opts
+	 * @returns {CounterMetric | GaugeMetric | HistogramMetric | InfoMetric}
 	 */
 	register(opts) {
 		if (!isPlainObject(opts)) throw new Error("Wrong argument. Must be an Object.");
@@ -165,7 +207,7 @@ class MetricRegistry {
 	 * Get metric by name
 	 *
 	 * @param {String} name
-	 * @returns {BaseMetric}
+	 * @returns {CounterMetric | GaugeMetric | HistogramMetric | InfoMetric}
 	 * @memberof MetricRegistry
 	 */
 	getMetric(name) {
@@ -179,16 +221,16 @@ class MetricRegistry {
 	 * Increment a metric value.
 	 *
 	 * @param {String} name
-	 * @param {Object?} labels
-	 * @param {number} [value=1]
-	 * @param {Number?} timestamp
+	 * @param {Object=} labels
+	 * @param {number=} [value=1]
+	 * @param {Number=} timestamp
 	 * @returns
 	 * @memberof MetricRegistry
 	 */
 	increment(name, labels, value = 1, timestamp) {
 		if (!this.opts.enabled) return null;
 
-		const item = this.getMetric(name);
+		const item = /** @type {GaugeMetric} */ (this.getMetric(name));
 		if (!isFunction(item.increment))
 			throw new Error(
 				"Invalid metric type. Incrementing works only with counter & gauge metric types."
@@ -201,16 +243,16 @@ class MetricRegistry {
 	 * Decrement a metric value.
 	 *
 	 * @param {String} name
-	 * @param {Object?} labels
-	 * @param {number} [value=1]
-	 * @param {Number?} timestamp
+	 * @param {Object=} labels
+	 * @param {number=} [value=1]
+	 * @param {Number=} timestamp
 	 * @returns
 	 * @memberof MetricRegistry
 	 */
 	decrement(name, labels, value = 1, timestamp) {
 		if (!this.opts.enabled) return null;
 
-		const item = this.getMetric(name);
+		const item = /** @type {GaugeMetric} */ (this.getMetric(name));
 		if (!isFunction(item.decrement))
 			throw new Error("Invalid metric type. Decrementing works only with gauge metric type.");
 
@@ -221,16 +263,16 @@ class MetricRegistry {
 	 * Set a metric value.
 	 *
 	 * @param {String} name
-	 * @param {*} value
-	 * @param {Object?} labels
-	 * @param {Number?} timestamp
+	 * @param {any} value
+	 * @param {Object=} labels
+	 * @param {Number=} timestamp
 	 * @returns
 	 * @memberof MetricRegistry
 	 */
 	set(name, value, labels, timestamp) {
 		if (!this.opts.enabled) return null;
 
-		const item = this.getMetric(name);
+		const item = /** @type {GaugeMetric} */ (this.getMetric(name));
 		if (!isFunction(item.set))
 			throw new Error(
 				"Invalid metric type. Value setting works only with counter, gauge & info metric types."
@@ -244,15 +286,15 @@ class MetricRegistry {
 	 *
 	 * @param {String} name
 	 * @param {Number} value
-	 * @param {Object?} labels
-	 * @param {Number?} timestamp
+	 * @param {Object=} labels
+	 * @param {Number=} timestamp
 	 * @returns
 	 * @memberof MetricRegistry
 	 */
 	observe(name, value, labels, timestamp) {
 		if (!this.opts.enabled) return null;
 
-		const item = this.getMetric(name);
+		const item = /** @type {HistogramMetric} */ (this.getMetric(name));
 		if (!isFunction(item.observe))
 			throw new Error(
 				"Invalid metric type. Observing works only with histogram metric type."
@@ -298,14 +340,14 @@ class MetricRegistry {
 	 * @param {String} name
 	 * @param {Object?} labels
 	 * @param {Number?} timestamp
-	 * @returns {Function} `end`˙function.
+	 * @returns {() => number} `end`˙function.
 	 * @memberof MetricRegistry
 	 */
 	timer(name, labels, timestamp) {
 		let item;
 		if (name && this.opts.enabled) {
 			item = this.getMetric(name);
-			if (!isFunction(item.observe) && !isFunction(item.set)) {
+			if (!("observe" in item) && !("set" in item)) {
 				/* istanbul ignore next */
 				throw new Error(
 					"Invalid metric type. Timing works only with histogram or gauge metric types"
@@ -348,14 +390,11 @@ class MetricRegistry {
 	/**
 	 * List all registered metrics with labels & values.
 	 *
-	 * @param {Object?} opts
-	 * @param {String|Array<String>|null} opts.types
-	 * @param {String|Array<String>|null} opts.includes
-	 * @param {String|Array<String>|null} opts.excludes
+	 * @param {MetricListOptions?} opts
 	 */
 	list(opts) {
 		const res = [];
-		opts = opts || {};
+		opts = opts ?? {};
 
 		const types =
 			opts.types != null ? (isString(opts.types) ? [opts.types] : opts.types) : null;

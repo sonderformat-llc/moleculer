@@ -20,9 +20,10 @@ const broker = new ServiceBroker({
 		}
 	},
 	*/
-	//transporter: "kafka://192.168.0.181:9092",
+	transporter: "Redis",
+	//transporter: "kafka://127.0.0.1:9093",
 	//transporter: "amqp://192.168.0.181:5672",
-	transporter: "NATS",
+	//transporter: "NATS",
 	//serializer: "MsgPack",
 	//requestTimeout: 1000,
 
@@ -33,7 +34,7 @@ const broker = new ServiceBroker({
 		//discoverer: "Etcd3"
 	},
 
-	cacher: true,
+	cacher: "Redis",
 
 	metrics: {
 		enabled: false,
@@ -79,8 +80,8 @@ const broker = new ServiceBroker({
 	logger: console,
 	logLevel: "info",
 	middlewares: [
-		//Middlewares.Transmit.Encryption("moleculer", "aes-256-cbc"),
-		//Middlewares.Transmit.Compression(),
+		// Middlewares.Transmit.Encryption("moleculer", "aes-256-cbc"),
+		// Middlewares.Transmit.Compression()
 		//Middlewares.Debugging.TransitLogger({ logPacketData: false, /*folder: null, colors: { send: "magenta", receive: "blue"}*/ }),
 		//Middlewares.Debugging.ActionLogger({ logParams: true, logResponse: true, /*folder: null, colors: { send: "magenta", receive: "blue"}*/ }),
 		//require("./RedisHeartbeat")

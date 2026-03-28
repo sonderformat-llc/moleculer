@@ -1,10 +1,18 @@
 /*
  * moleculer
- * Copyright (c) 2018 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
 "use strict";
+
+/**
+ * Import types
+ *
+ * @typedef {import("./service-broker")} ServiceBroker
+ * @typedef {import("./errors").Regenerator} RegeneratorClass
+ * @typedef {import("./errors").PlainMoleculerError} PlainMoleculerError
+ */
 
 /**
  * Extendable errors class.
@@ -44,6 +52,8 @@ class ExtendableError extends Error {
 	}
 }
 
+class TimeoutError extends ExtendableError {}
+
 /**
  * Custom Moleculer Error class
  *
@@ -54,10 +64,10 @@ class MoleculerError extends ExtendableError {
 	/**
 	 * Creates an instance of MoleculerError.
 	 *
-	 * @param {String?} message
-	 * @param {Number?} code
-	 * @param {String?} type
-	 * @param {any} data
+	 * @param {String=} message
+	 * @param {Number=} code
+	 * @param {String=} type
+	 * @param {any=} data
 	 *
 	 * @memberof MoleculerError
 	 */
@@ -83,7 +93,7 @@ class MoleculerRetryableError extends MoleculerError {
 	 * @param {String?} message
 	 * @param {Number?} code
 	 * @param {String?} type
-	 * @param {any} data
+	 * @param {any?} data
 	 *
 	 * @memberof MoleculerRetryableError
 	 */
@@ -343,7 +353,7 @@ class MaxCallLevelError extends MoleculerError {
  * Custom Moleculer Error class for Service schema errors
  *
  * @class ServiceSchemaError
- * @extends {Error}
+ * @extends {MoleculerError}
  */
 class ServiceSchemaError extends MoleculerError {
 	/**
@@ -362,7 +372,7 @@ class ServiceSchemaError extends MoleculerError {
  * Custom Moleculer Error class for broker option errors
  *
  * @class BrokerOptionsError
- * @extends {Error}
+ * @extends {MoleculerError}
  */
 class BrokerOptionsError extends MoleculerError {
 	/**
@@ -381,7 +391,7 @@ class BrokerOptionsError extends MoleculerError {
  * Custom Moleculer Error class for Graceful stopping
  *
  * @class GracefulStopTimeoutError
- * @extends {Error}
+ * @extends {MoleculerError}
  */
 class GracefulStopTimeoutError extends MoleculerError {
 	/**
@@ -400,7 +410,7 @@ class GracefulStopTimeoutError extends MoleculerError {
 					? {
 							name: data.service.name,
 							version: data.service.version
-					  }
+						}
 					: null
 			);
 		} else {
@@ -413,7 +423,7 @@ class GracefulStopTimeoutError extends MoleculerError {
  * Protocol version is mismatch
  *
  * @class ProtocolVersionMismatchError
- * @extends {Error}
+ * @extends {MoleculerError}
  */
 class ProtocolVersionMismatchError extends MoleculerError {
 	/**
@@ -432,7 +442,7 @@ class ProtocolVersionMismatchError extends MoleculerError {
  * Invalid packet format error
  *
  * @class InvalidPacketDataError
- * @extends {Error}
+ * @extends {MoleculerError}
  */
 class InvalidPacketDataError extends MoleculerError {
 	/**
@@ -450,7 +460,7 @@ class InvalidPacketDataError extends MoleculerError {
 /**
  * Recreate an error from a transferred payload `err`
  *
- * @param {Error} err
+ * @param {MoleculerError} err
  * @returns {MoleculerError}
  */
 function recreateError(err) {
@@ -500,6 +510,7 @@ function recreateError(err) {
 /**
  * Error Regenerator
  * @class Regenerator
+ * @implements {RegeneratorClass}
  */
 class Regenerator {
 	/**
@@ -516,8 +527,8 @@ class Regenerator {
 	/**
 	 * Restores an Error object
 	 *
-	 * @param {Object} plainError
-	 * @param {Object} payload
+	 * @param {PlainMoleculerError} plainError
+	 * @param {Record<string, any>} payload
 	 * @return {Error}
 	 *
 	 * @memberof Regenerator
@@ -539,53 +550,55 @@ class Regenerator {
 	/**
 	 * Extracts a plain error object from Error object
 	 *
-	 * @param {Error} err
-	 * @param {Object} payload
-	 * @return {Object} plain error
+	 * @param {Record<string, any>} plainErr
+	 * @param {Record<string, any>} payload
+	 * @return {PlainMoleculerError} plain error
 	 *
 	 * @memberof Regenerator
 	 */
-	extractPlainError(err) {
+	extractPlainError(plainErr /*, payload*/) {
 		return {
-			name: err.name,
-			message: err.message,
-			nodeID: err.nodeID || this.broker.nodeID,
-			code: err.code,
-			type: err.type,
-			retryable: err.retryable,
-			stack: err.stack,
-			data: err.data
+			name: plainErr.name,
+			message: plainErr.message,
+			nodeID: plainErr.nodeID || this.broker.nodeID,
+			code: plainErr.code,
+			type: plainErr.type,
+			retryable: plainErr.retryable,
+			stack: plainErr.stack,
+			data: plainErr.data
 		};
 	}
 
 	/**
 	 * Hook to restore a custom error in a child class
 	 *
-	 * @param {Object} plainError
+	 * @param {PlainMoleculerError} plainError
 	 * @param {Object} payload
-	 * @return {Error | undefined}
+	 * @return {MoleculerError}
 	 *
 	 * @memberof Regenerator
 	 */
-	restoreCustomError() {
+	restoreCustomError(/*plainError, payload*/) {
 		return undefined;
 	}
 
 	/**
 	 * Creates a default error if not found
 	 *
-	 * @param {Object} plainError
-	 * @return {Error}
+	 * @param {PlainMoleculerError} plainError
+	 * @return {any}
 	 * @private
 	 *
 	 * @memberof Regenerator
 	 */
 	_createDefaultError(plainError) {
+		/** @type {any} */
 		const err = new Error(plainError.message);
 		err.name = plainError.name;
 		err.code = plainError.code;
 		err.type = plainError.type;
 		err.data = plainError.data;
+		if (plainError.stack) err.stack = plainError.stack;
 
 		return err;
 	}
@@ -593,8 +606,8 @@ class Regenerator {
 	/**
 	 * Restores external error fields
 	 *
-	 * @param {Object} plainError
-	 * @param {Object} err
+	 * @param {PlainMoleculerError} plainError
+	 * @param {PlainMoleculerError} err
 	 * @param {Object} payload
 	 * @private
 	 *
@@ -608,8 +621,8 @@ class Regenerator {
 	/**
 	 * Restores an error stack
 	 *
-	 * @param {Object} plainError
-	 * @param {Object} err
+	 * @param {PlainMoleculerError} plainError
+	 * @param {Error} err
 	 * @private
 	 *
 	 * @memberof Regenerator
@@ -622,7 +635,7 @@ class Regenerator {
 /**
  * Resolves a regenerator option
  *
- * @param {Regenerator} opt
+ * @param {Regenerator=} opt
  * @return {Regenerator}
  */
 function resolveRegenerator(opt) {
@@ -635,6 +648,7 @@ function resolveRegenerator(opt) {
 
 module.exports = {
 	ExtendableError,
+	TimeoutError,
 
 	MoleculerError,
 	MoleculerRetryableError,

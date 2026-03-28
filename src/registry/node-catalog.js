@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -12,9 +12,20 @@ const Node = require("./node");
 const { getIpList } = require("../utils");
 
 /**
+ * Import types
+ *
+ * @typedef {import("./registry")} Registry
+ * @typedef {import("../service-broker")} ServiceBroker
+ * @typedef {import("./node-catalog")} NodeCatalogClass
+ * @typedef {import("./node-catalog").NodeCatalogListOptions} NodeCatalogListOptions
+ * @typedef {import("./node-catalog").NodeCatalogListResult} NodeCatalogListResult
+ */
+
+/**
  * Catalog for nodes
  *
  * @class NodeCatalog
+ * @implements {NodeCatalogClass}
  */
 class NodeCatalog {
 	/**
@@ -30,6 +41,7 @@ class NodeCatalog {
 		this.broker = broker;
 		this.logger = registry.logger;
 
+		this.localNode = null;
 		this.nodes = new Map();
 
 		this.createLocalNode();
@@ -65,7 +77,7 @@ class NodeCatalog {
 	 * Add a new node
 	 *
 	 * @param {String} id
-	 * @param {any} node
+	 * @param {Node} node
 	 * @memberof NodeCatalog
 	 */
 	add(id, node) {
@@ -87,7 +99,7 @@ class NodeCatalog {
 	 * Get a node by nodeID
 	 *
 	 * @param {String} id
-	 * @returns
+	 * @returns {Node}
 	 * @memberof NodeCatalog
 	 */
 	get(id) {
@@ -128,6 +140,7 @@ class NodeCatalog {
 	 * Process incoming INFO packet payload
 	 *
 	 * @param {any} payload
+	 * @returns {Node}
 	 * @memberof NodeCatalog
 	 */
 	processNodeInfo(payload) {
@@ -202,11 +215,11 @@ class NodeCatalog {
 	/**
 	 * Get a node list
 	 *
-	 * @param {Object} {onlyAvailable = false, withServices = false}
-	 * @returns
+	 * @param {NodeCatalogListOptions} opts
+	 * @returns {NodeCatalogListResult[]}
 	 * @memberof NodeCatalog
 	 */
-	list({ onlyAvailable = false, withServices = false }) {
+	list({ onlyAvailable = false, withServices = false } = {}) {
 		let res = [];
 		this.nodes.forEach(node => {
 			if (onlyAvailable && !node.available) return;

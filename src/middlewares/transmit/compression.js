@@ -15,6 +15,7 @@ const { promisify } = require("util");
  * This is a transmission compression middleware. It supports
  * the `deflate`, `deflateRaw` & `gzip` compression methods.
  *
+ * @param {object} opts
  * @param {String?} opts.method
  * @param {String|Number} opts.threshold
  */
@@ -81,7 +82,7 @@ module.exports = function CompressionMiddleware(opts) {
 		transporterReceive(next) {
 			return (cmd, data, s) => {
 				const isCompressed = data.readInt8(0);
-				if (isCompressed == 0) {
+				if (isCompressed === 0) {
 					logger.debug(
 						`Packet '${cmd}' is small and not compressed. Size: ${data.length}`
 					);

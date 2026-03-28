@@ -6,6 +6,10 @@
 
 "use strict";
 
+/**
+ * @typedef {import("../service")} Service
+ */
+
 const _ = require("lodash");
 const { isFunction, isString, match } = require("../utils");
 
@@ -68,8 +72,6 @@ module.exports = function actionHookMiddleware(broker) {
 				hooks && hooks.error ? sanitizeHooks(hooks.error["*"], action.service) : null;
 
 			// Hooks in service
-			/** @type {Array<String>?} List of hooks names that match the action name */
-
 			const matchHook = hookName => {
 				if (hookName === "*") return false;
 				const patterns = hookName.split("|");
@@ -84,7 +86,7 @@ module.exports = function actionHookMiddleware(broker) {
 				beforeHookMatches && beforeHookMatches.length > 0
 					? beforeHookMatches.map(hookName =>
 							sanitizeHooks(hooks.before[hookName], action.service)
-					  )
+						)
 					: null;
 
 			/** @type {Array<String>?} List of hooks names that match the action name */
@@ -96,7 +98,7 @@ module.exports = function actionHookMiddleware(broker) {
 				afterHookMatches && afterHookMatches.length > 0
 					? afterHookMatches.map(hookName =>
 							sanitizeHooks(hooks.after[hookName], action.service)
-					  )
+						)
 					: null;
 
 			/** @type {Array<String>?} List of hooks names that match the action name */
@@ -108,7 +110,7 @@ module.exports = function actionHookMiddleware(broker) {
 				errorHookMatches && errorHookMatches.length > 0
 					? errorHookMatches.map(hookName =>
 							sanitizeHooks(hooks.error[hookName], action.service)
-					  )
+						)
 					: null;
 
 			// Hooks in action definition

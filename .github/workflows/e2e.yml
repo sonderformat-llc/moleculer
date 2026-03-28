@@ -27,22 +27,22 @@ jobs:
     #  cancel-in-progress: true
     strategy:
       matrix:
-        node-version: [14.x]
-        transporter: [NATS, Redis, MQTT, AMQP, AMQP10, STAN, Kafka, TCP]
-        serializer: [JSON, MsgPack, Notepack, ProtoBuf, Avro, Thrift, CBOR]
+        node-version: [22.x]
+        transporter: [NATS, Redis, MQTT, AMQP, AMQP10, Kafka, TCP]
+        serializer: [JSON, JSONExt, MsgPack, Notepack, CBOR]
         discoverer: [Local, Etcd3, Redis]
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Use Node.js ${{ matrix.node-version }} with ${{ matrix.transporter }} transporter and ${{ matrix.serializer }} and ${{ matrix.discoverer }} discoverer
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
 
     - name: Cache node modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: cache-node-modules
       with:
@@ -82,13 +82,8 @@ jobs:
       if: ${{ matrix.transporter == 'AMQP10' }}
       working-directory: ./test
 
-    - name: Start NATS Streaming
-      run: docker compose up -d stan && sleep 10
-      if: ${{ matrix.transporter == 'STAN' }}
-      working-directory: ./test
-
     - name: Start Kafka
-      run: docker compose up -d zookeeper kafka && sleep 60
+      run: docker compose up -d kafka && sleep 60
       if: ${{ matrix.transporter == 'Kafka' }}
       working-directory: ./test
 
@@ -112,7 +107,7 @@ jobs:
         TRANSPORTER: ${{ matrix.transporter }}
         SERIALIZER: ${{ matrix.serializer }}
         DISCOVERER: ${{ matrix.discoverer }}
-        # LOGLEVEL: "${{ matrix.serializer == 'CBOR' && 'debug' || 'info' }}"
+        # LOGLEVEL: "${{ matrix.transporter == 'Kafka' && 'debug' || 'warn' }}"
 
     - name: Stop containers
       run: docker compose down -v

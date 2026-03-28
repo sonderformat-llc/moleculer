@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2020 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -19,15 +19,34 @@ const ActionEndpoint = require("./endpoint-action");
 const { METRIC } = require("../metrics");
 
 /**
+ * Import types
+ *
+ * @typedef {import("../context")} Context
+ * @typedef {import("../service")} Service
+ * @typedef {import("./service-item")} ServiceItem
+ * @typedef {import("../service").ServiceAction} ServiceAction
+ * @typedef {import("../service").ActionSchema} ActionSchema
+ * @typedef {import("../service").EventSchema} EventSchema
+ * @typedef {import("./registry")} RegistryClass
+ * @typedef {import("./registry").NodeRawInfo} NodeRawInfo
+ * @typedef {import("../service-broker")} ServiceBroker
+ * @typedef {import("./node")} Node
+ * @typedef {import("./endpoint-list")} EndpointList
+ * @typedef {import("./endpoint")} Endpoint
+ * @typedef {import("../strategies/base")} BaseStrategy
+ */
+
+/**
  * Service Registry
  *
  * @class Registry
+ * @implements {RegistryClass}
  */
 class Registry {
 	/**
 	 * Creates an instance of Registry.
 	 *
-	 * @param {any} broker
+	 * @param {ServiceBroker} broker
 	 * @memberof Registry
 	 */
 	constructor(broker) {
@@ -40,9 +59,11 @@ class Registry {
 		this.StrategyFactory = Strategies.resolve(this.opts.strategy);
 		this.logger.info(`Strategy: ${this.StrategyFactory.name}`);
 
+		/** @type {Discoverers.Base} */
 		this.discoverer = Discoverers.resolve(this.opts.discoverer);
 		this.logger.info(`Discoverer: ${this.broker.getConstructorName(this.discoverer)}`);
 
+		/** @type {boolean|string} */
 		this.localNodeInfoInvalidated = true;
 
 		this.nodes = new NodeCatalog(this, broker);
@@ -54,7 +75,7 @@ class Registry {
 		this.updateMetrics();
 	}
 
-	init(/*broker*/) {
+	init() {
 		this.discoverer.init(this);
 	}
 
@@ -163,7 +184,7 @@ class Registry {
 	/**
 	 * Register local service
 	 *
-	 * @param {Service} svc
+	 * @param {ServiceItem} svc
 	 * @memberof Registry
 	 */
 	registerLocalService(svc) {
@@ -189,7 +210,7 @@ class Registry {
 	/**
 	 * Register remote services
 	 *
-	 * @param {Nodeany} node
+	 * @param {Node} node
 	 * @param {Array} serviceList
 	 * @memberof Registry
 	 */
@@ -270,8 +291,8 @@ class Registry {
 	 * 		- "protected": can be called from local services
 	 * 		- "private": can be called from internally via `this.actions.xy()` inside Service
 	 *
-	 * @param {*} action
-	 * @param {*} node
+	 * @param {ActionSchema} action
+	 * @param {Node} node
 	 * @returns
 	 * @memberof Registry
 	 */
@@ -292,8 +313,8 @@ class Registry {
 	 * Register service actions
 	 *
 	 * @param {Node} node
-	 * @param {Service} service
-	 * @param {Object} actions
+	 * @param {ServiceItem} service
+	 * @param {Record<string, ActionSchema>} actions
 	 * @memberof Registry
 	 */
 	registerActions(node, service, actions) {
@@ -331,7 +352,7 @@ class Registry {
 	/**
 	 * Create a local Endpoint for private actions
 	 *
-	 * @param {Action} action
+	 * @param {ActionSchema} action
 	 * @returns {ActionEndpoint}
 	 * @memberof Registry
 	 */
@@ -367,7 +388,7 @@ class Registry {
 	 *
 	 * @param {String} actionName
 	 * @param {String} nodeID
-	 * @returns {Endpoint}
+	 * @returns {ActionEndpoint}
 	 * @memberof Registry
 	 */
 	getActionEndpointByNodeId(actionName, nodeID) {
@@ -424,7 +445,7 @@ class Registry {
 	 *
 	 * @param {Node} node
 	 * @param {ServiceItem} service
-	 * @param {Object} events
+	 * @param {Record<string, EventSchema>} events
 	 * @memberof Registry
 	 */
 	registerEvents(node, service, events) {
@@ -457,6 +478,10 @@ class Registry {
 	/**
 	 * Generate local raw info for INFO packet
 	 *
+	 * @param {boolean} incSeq
+	 * @param {boolean=} isStopping
+	 *
+	 * @returns {NodeRawInfo}
 	 * @memberof Registry
 	 */
 	regenerateLocalRawInfo(incSeq, isStopping) {
@@ -489,7 +514,8 @@ class Registry {
 	/**
 	 * Generate local node info for INFO packets
 	 *
-	 * @returns
+	 * @param {boolean=} force
+	 * @returns {NodeRawInfo}
 	 * @memberof Registry
 	 */
 	getLocalNodeInfo(force) {
@@ -506,7 +532,8 @@ class Registry {
 	/**
 	 * Generate node info for INFO packets
 	 *
-	 * @returns
+	 * @param {String} nodeID
+	 * @returns {NodeRawInfo}
 	 * @memberof Registry
 	 */
 	getNodeInfo(nodeID) {
@@ -532,7 +559,7 @@ class Registry {
 	/**
 	 * Get list of registered nodes
 	 *
-	 * @param {object} opts
+	 * @param {object?} opts
 	 * @returns
 	 * @memberof Registry
 	 */
@@ -543,7 +570,7 @@ class Registry {
 	/**
 	 * Get list of registered services
 	 *
-	 * @param {object} opts
+	 * @param {object?} opts
 	 * @returns
 	 * @memberof Registry
 	 */
@@ -554,7 +581,7 @@ class Registry {
 	/**
 	 * Get list of registered actions
 	 *
-	 * @param {object} opts
+	 * @param {object?} opts
 	 * @returns
 	 * @memberof Registry
 	 */
@@ -565,7 +592,7 @@ class Registry {
 	/**
 	 * Get list of registered events
 	 *
-	 * @param {object} opts
+	 * @param {object?} opts
 	 * @returns
 	 * @memberof Registry
 	 */
@@ -576,7 +603,7 @@ class Registry {
 	/**
 	 * Get a raw info list from nodes
 	 *
-	 * @returns {Array<Object>}
+	 * @returns {Array<NodeRawInfo>}
 	 * @memberof Registry
 	 */
 	getNodeRawList() {

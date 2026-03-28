@@ -1,6 +1,6 @@
 /*
  * moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2023 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
@@ -9,7 +9,6 @@
 const BaseReporter = require("./base");
 const _ = require("lodash");
 const os = require("os");
-const fetch = require("node-fetch");
 const { MoleculerError } = require("../../errors");
 const METRIC = require("../constants");
 const { isFunction } = require("../../utils");
@@ -17,20 +16,34 @@ const { isFunction } = require("../../utils");
 const BASE_URL = "https://api.datadoghq.com/api/";
 
 /**
+ * Import types
+ *
+ * @typedef {import("../registry")} MetricRegistry
+ * @typedef {import("./datadog").DatadogReporterOptions} DatadogReporterOptions
+ * @typedef {import("./datadog")} DatadogReporterClass
+ * @typedef {import("../types/base").BaseMetricPOJO} BaseMetricPOJO
+ * @typedef {import("../types/base")} BaseMetric
+ */
+
+/**
  * Datadog reporter for Moleculer.
  *
  * 		https://www.datadoghq.com/
  *
+ * @class DatadogReporter
+ * @extends {BaseReporter}
+ * @implements {DatadogReporterClass}
  */
 class DatadogReporter extends BaseReporter {
 	/**
 	 * Constructor of DatadogReporters
-	 * @param {Object} opts
+	 * @param {DatadogReporterOptions} opts
 	 * @memberof DatadogReporter
 	 */
 	constructor(opts) {
 		super(opts);
 
+		/** @type {DatadogReporterOptions} */
 		this.opts = _.defaultsDeep(this.opts, {
 			host: os.hostname(),
 			baseUrl: BASE_URL,
@@ -59,8 +72,6 @@ class DatadogReporter extends BaseReporter {
 	 */
 	init(registry) {
 		super.init(registry);
-
-		fetch.Promise = this.broker.Promise;
 
 		if (this.opts.interval > 0) {
 			this.timer = setInterval(() => this.flush(), this.opts.interval * 1000);
@@ -93,7 +104,7 @@ class DatadogReporter extends BaseReporter {
 	flush() {
 		const series = this.generateDatadogSeries();
 
-		if (series.length == 0) return;
+		if (series.length === 0) return;
 
 		return fetch(
 			`${this.opts.baseUrl}${this.opts.apiVersion}${this.opts.path}?api_key=${this.opts.apiKey}`,
@@ -153,7 +164,7 @@ class DatadogReporter extends BaseReporter {
 			*/
 
 			const snapshot = metric.snapshot();
-			if (snapshot.length == 0) return;
+			if (snapshot.length === 0) return;
 
 			switch (metric.type) {
 				case METRIC.TYPE_COUNTER:
@@ -302,13 +313,18 @@ class DatadogReporter extends BaseReporter {
 	labelsToTags(itemLabels) {
 		const labels = Object.assign({}, this.defaultLabels || {}, itemLabels || {});
 		const keys = Object.keys(labels);
-		if (keys.length == 0) return [];
+		if (keys.length === 0) return [];
 
 		return keys.map(
 			key => `${this.formatLabelName(key)}:${this.escapeLabelValue(labels[key])}`
 		);
 	}
 
+	/**
+	 *
+	 * @param {number?} time
+	 * @returns
+	 */
 	posixTimestamp(time) {
 		return time != null ? Math.floor(time / 1000) : undefined;
 	}
