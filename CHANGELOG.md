@@ -1,5 +1,5 @@
 <a name="0.15.0"></a>
-# [0.15.0](https://github.com/moleculerjs/moleculer/compare/v0.14.29...v0.15.0) (2025-xx-xx)
+# [0.15.0](https://github.com/moleculerjs/moleculer/compare/v0.14.29...v0.15.0) (2026-03-28)
 
 [**Migration guide from 0.14 to 0.15**](https://github.com/moleculerjs/moleculer/blob/next/docs/MIGRATION_GUIDE_0.15.md)
 
@@ -421,11 +421,6 @@ There are some changes in the serialized values in the cache keys. In previous v
 In 0.15, string values are wrapped into quotes, the `null` is `null` and `undefined` is serialized as `undefined`, so similar serialized values. 
 
 These changes means the 0.15 cachers create different cache keys than 0.14 cachers.
-
-
---------------------------------------------------
-<a name="Unreleased"></a>
-# [Unreleased](https://github.com/moleculerjs/moleculer/compare/v0.14.33...master)
 
 --------------------------------------------------
 <a name="0.14.35"></a>
