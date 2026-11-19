@@ -76,7 +76,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@opentelemetry/auto-instrumentations-node": "^0.64.5",
+    "@opentelemetry/auto-instrumentations-node": "^0.83.1",
     "@opentelemetry/exporter-metrics-otlp-proto": "^0.205.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.205.0",
     "@opentelemetry/instrumentation": "^0.205.0",
